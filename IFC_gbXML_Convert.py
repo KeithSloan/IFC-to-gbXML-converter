@@ -1,3 +1,4 @@
+#!/usr/bin/python3
 # Import necessary python libraries e.g. IfcOpenShell, PythonOCC and MiniDom
 import ifcopenshell.geom
 import OCC.Core.BRep
@@ -8,6 +9,7 @@ import OCC.Core.ProjLib
 import OCC.Core.BRepTools
 import datetime
 import time
+import sys
 from xml.dom import minidom
 
 # Use IfcOpenShell and OPENCASCADE to convert implicit geometry into explicit geometry
@@ -87,8 +89,9 @@ def fix_xml_cons(a):
 def fix_xml_layer(a):
     return 'lyr' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
 
-# Access the specific IFC file; external directory: (r"C:/Users/s136146/Desktop/StoreysWindowsMaterialsFacade.ifc")
-ifc_file = ifcopenshell.open('Pilot project 5.ifc')
+if not len(sys.argv) == 3:
+    sys.exit("Usage: " + sys.argv[0] + " input.ifc output.gbXML")
+ifc_file = ifcopenshell.open(sys.argv[1])
 
 # Create the XML root by making use of MiniDom
 root = minidom.Document()
@@ -742,7 +745,7 @@ for element in personInfo:
 gbxml.appendChild(docHistory)
 
 # Create a new XML file and write all created elements to it
-save_path_file = "New_Exported_gbXML.xml"
+save_path_file = sys.argv[2]
 
 root.writexml( open(save_path_file, "w"),
                indent="  ",
