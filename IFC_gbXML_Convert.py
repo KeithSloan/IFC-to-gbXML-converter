@@ -325,8 +325,16 @@ for element in boundaries:
         if element.RelatedBuildingElement.is_a('IfcSlab'):
             surface.setAttribute('surfaceType', 'InteriorFloor')
 
+        if element.RelatedBuildingElement.is_a('IfcSlab') and element.\
+                InternalOrExternalBoundary == 'EXTERNAL_EARTH':
+            surface.setAttribute('surfaceType', 'SlabOnGrade')
+
         if element.RelatedBuildingElement.is_a('IfcWall') and element.\
                 InternalOrExternalBoundary == 'EXTERNAL':
+            surface.setAttribute('surfaceType', 'ExteriorWall')
+
+        if element.RelatedBuildingElement.is_a('IfcWall') and element.\
+                InternalOrExternalBoundary == 'EXTERNAL_FIRE':
             surface.setAttribute('surfaceType', 'ExteriorWall')
 
         if element.RelatedBuildingElement.is_a('IfcWall') and element.\
