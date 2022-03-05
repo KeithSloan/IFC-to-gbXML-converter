@@ -391,12 +391,16 @@ for element in boundaries:
 
         campus.appendChild(surface)
 
-    if element.RelatedBuildingElement.is_a('IfcWindow'):
+    if element.RelatedBuildingElement.is_a('IfcWindow') or element.RelatedBuildingElement.is_a('IfcDoor'):
         opening = root.createElement('Opening')
 
         # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
-        opening.setAttribute('windowTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
-        opening.setAttribute('openingType', 'OperableWindow')
+        if element.RelatedBuildingElement.is_a('IfcWindow'):
+            opening.setAttribute('windowTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
+            opening.setAttribute('openingType', 'OperableWindow')
+        elif element.RelatedBuildingElement.is_a('IfcDoor'):
+            opening.setAttribute('doorTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
+            opening.setAttribute('openingType', 'NonSlidingDoor')
 
         opening.setAttribute('id', 'Opening%d' % opening_id)
         opening_id = opening_id + 1
@@ -450,21 +454,24 @@ for element in boundaries:
 
 # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
 # This new element is added as child to the earlier created 'gbXML' element
-windows = ifc_file.by_type('IfcWindow')
-for element in windows:
-    window = root.createElement('WindowType')
-    window.setAttribute('id', fix_xml_id(element.GlobalId))
-    gbxml.appendChild(window)
+elements = ifc_file.by_type('IfcWindow') + ifc_file.by_type('IfcDoor')
+for element in elements:
+    if element.is_a('IfcWindow'):
+        opening_type = root.createElement('WindowType')
+    elif element.is_a('IfcDoor'):
+        opening_type = root.createElement('DoorType')
+    opening_type.setAttribute('id', fix_xml_id(element.GlobalId))
+    gbxml.appendChild(opening_type)
 
-    dict_id[fix_xml_id(element.GlobalId)] = window
+    dict_id[fix_xml_id(element.GlobalId)] = opening_type
 
     name = root.createElement('Name')
     name.appendChild(root.createTextNode(fix_xml_name(element.Name)))
-    window.appendChild(name)
+    opening_type.appendChild(name)
 
     description = root.createElement('Description')
     description.appendChild(root.createTextNode(fix_xml_name(element.Name)))
-    window.appendChild(description)
+    opening_type.appendChild(description)
 
     # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
     analyticValue = element.IsDefinedBy
@@ -478,13 +485,13 @@ for element in windows:
                         valueU = p.NominalValue.wrappedValue
                         u_value.setAttribute('unit', 'WPerSquareMeterK')
                         u_value.appendChild(root.createTextNode(str(valueU)))
-                        window.appendChild(u_value)
+                        opening_type.appendChild(u_value)
 
     solarHeat = root.createElement('SolarHeatGainCoeff')
     visualLight = root.createElement('Transmittance')
     for r in analyticValue:
         if r.is_a('IfcRelDefinesByType'):
-            if r.RelatingType.is_a('IfcWindowStyle'):
+            if r.RelatingType.is_a('IfcTypeProduct'):
                 for p in r.RelatingType.HasPropertySets:
                     if p.Name == 'Analytical Properties(Type)':
                         for t in p.HasProperties:
@@ -492,14 +499,14 @@ for element in windows:
                                 valueSolar = t.NominalValue.wrappedValue
                                 solarHeat.setAttribute('unit', 'Fraction')
                                 solarHeat.appendChild(root.createTextNode(str(valueSolar)))
-                                window.appendChild(solarHeat)
+                                opening_type.appendChild(solarHeat)
 
                             if t.Name == 'Visual Light Transmittance':
                                 valueLight = t.NominalValue.wrappedValue
                                 visualLight.setAttribute('unit', 'Fraction')
                                 visualLight.setAttribute('type', 'Visible')
                                 visualLight.appendChild(root.createTextNode(str(valueLight)))
-                                window.appendChild(visualLight)
+                                opening_type.appendChild(visualLight)
 
 # Specify the 'Construction' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
 # This new element is added as child to the earlier created 'gbXML' element
