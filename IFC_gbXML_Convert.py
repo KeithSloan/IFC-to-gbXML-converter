@@ -1,60 +1,29 @@
 #!/usr/bin/python3
-# Import necessary python libraries e.g. IfcOpenShell, PythonOCC and MiniDom
-import ifcopenshell.geom
-import OCC.Core.BRep
-import OCC.Core.TopExp
-import OCC.Core.TopoDS
-import OCC.Core.TopAbs
-import OCC.Core.ProjLib
-import OCC.Core.BRepTools
+# Import necessary python libraries e.g. IfcOpenShell and MiniDom
+import ifcopenshell.util.placement
+import numpy as np
 import datetime
 import time
 import sys
 from xml.dom import minidom
 
-# Use IfcOpenShell and OPENCASCADE to convert implicit geometry into explicit geometry
-# Each Face consists of Wires, which consists of Edges, which has Vertices
-FACE, WIRE, EDGE, VERTEX = OCC.Core.TopAbs.TopAbs_FACE, OCC.Core.TopAbs.TopAbs_WIRE, OCC.Core.TopAbs.TopAbs_EDGE, \
-                           OCC.Core.TopAbs.TopAbs_VERTEX
 
-settings = ifcopenshell.geom.settings()
-settings.set(settings.USE_PYTHON_OPENCASCADE, True)
-
-
-def sub(shape, ty):
-    F = {
-        OCC.Core.TopAbs.TopAbs_FACE: OCC.Core.TopoDS.topods_Face,
-        OCC.Core.TopAbs.TopAbs_WIRE: OCC.Core.TopoDS.topods_Wire,
-        OCC.Core.TopAbs.TopAbs_EDGE: OCC.Core.TopoDS.topods_Edge,
-        OCC.Core.TopAbs.TopAbs_VERTEX: OCC.Core.TopoDS.topods_Vertex,
-    }[ty]
-    exp = OCC.Core.TopExp.TopExp_Explorer(shape, ty)
-    while exp.More():
-        face = F(exp.Current())
-        yield face
-        exp.Next()
-
-
-def ring(wire, face):
-    def vertices():
-        exp = OCC.Core.BRepTools.BRepTools_WireExplorer(wire, face)
-        while exp.More():
-            yield exp.CurrentVertex()
-            exp.Next()
-        yield exp.CurrentVertex()
-
-    return list(map(lambda p: (p.X(), p.Y(), p.Z()), map(OCC.Core.BRep.BRep_Tool.Pnt, vertices())))
-
-
-# Face to vertices
-def get_vertices(shape):
-    for face in sub(shape, FACE):
-        for idx, wire in enumerate(sub(face, WIRE)):
-            vertices = ring(wire, face)
-
-            if idx > 0:
-                vertices.reverse()
-            return vertices
+# from https://github.com/wassimj/TopologicSverchok/blob/main/nodes/Topologic/ifc_topologic.py
+def get_boundary_vertices(ifc_rel_space_boundary):
+    ifc_curve = ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement
+    if ifc_curve.is_a('IfcFaceSurface'):
+        ifc_points = ifc_curve.Bounds[0].Bound.Polygon
+        ifc_plane = ifc_curve.FaceSurface
+    elif ifc_curve.is_a('IfcCurveBoundedPlane'):
+        ifc_points = ifc_curve.OuterBoundary.Points
+        ifc_plane = ifc_curve.BasisSurface
+    plane_matrix = ifcopenshell.util.placement.get_axis2placement(ifc_plane.Position)
+    plane_coords = [ v.Coordinates for v in ifc_points ]
+    plane_vertices = [ np.array(v+(0,1)) if len(v) == 2 else np.array(v+(1,)) for v in plane_coords ]
+    vertices = [ (plane_matrix @ v)[0:3] for v in plane_vertices ]
+    if np.dot(np.cross(vertices[1] - vertices[0], vertices[-1] - vertices[0]), (plane_matrix @ np.array([0, 0, 1, 0]))[0:3]) < -1e-6:
+        vertices.reverse()
+    return vertices
 
 
 # Align the gbXML input according to the predefined official gbXML schema
@@ -232,16 +201,7 @@ for s in spaces:
         if element.RelatedBuildingElement == None:
             continue
 
-        # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
-        boundaryGeom = element.ConnectionGeometry.SurfaceOnRelatingElement
-
-        if boundaryGeom.is_a('IfcCurveBoundedPlane') and boundaryGeom.InnerBoundaries is None:
-            boundaryGeom.InnerBoundaries = ()
-
-        print(boundaryGeom)
-
-        # Use IfcOpenShell and OPENCASCADE to attach geometry to the specified IFC entity
-        space_boundary_shape = ifcopenshell.geom.create_shape(settings, boundaryGeom)
+        vertices = get_boundary_vertices(element)
 
         # Create 'SpaceBoundary' elements for the following building elements
         if element.RelatedBuildingElement.is_a('IfcCovering') or element.RelatedBuildingElement.is_a('IfcSlab') or \
@@ -273,7 +233,7 @@ for s in spaces:
 
             polyLoop = root.createElement('PolyLoop')
 
-            for v in get_vertices(space_boundary_shape):
+            for v in vertices:
                 x, y, z = v
                 z = z + new_z
                 print(x, y, z)
@@ -302,14 +262,7 @@ for element in boundaries:
     if element.ConnectionGeometry.SurfaceOnRelatingElement == None:
         continue
 
-    surfaceGeom = element.ConnectionGeometry.SurfaceOnRelatingElement
-
-    if surfaceGeom.is_a('IfcCurveBoundedPlane') and surfaceGeom.InnerBoundaries is None:
-        surfaceGeom.InnerBoundaries = ()
-
-    print(surfaceGeom)
-
-    space_boundary_shape = ifcopenshell.geom.create_shape(settings, surfaceGeom)
+    vertices = get_boundary_vertices(element)
 
     # Specify each 'Surface' element and set 'SurfaceType' attributes
     if element.RelatedBuildingElement.is_a('IfcCovering') or element.RelatedBuildingElement.is_a('IfcSlab') or element.\
@@ -377,7 +330,7 @@ for element in boundaries:
 
         polyLoop = root.createElement('PolyLoop')
 
-        for v in get_vertices(space_boundary_shape):
+        for v in vertices:
             x, y, z = v
             z = z + new_z
             print(x, y, z)
@@ -431,7 +384,7 @@ for element in boundaries:
         new_z = element.RelatingSpace.ObjectPlacement.PlacementRelTo.RelativePlacement.Location.Coordinates[2]
         new_z = new_z
 
-        for v in get_vertices(space_boundary_shape):
+        for v in vertices:
             x, y, z = v
             z = z + new_z
             print(x, y, z)
