@@ -360,11 +360,10 @@ for element in boundaries:
         opening = root.createElement('Opening')
 
         # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
+        opening.setAttribute('windowTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
         if element.RelatedBuildingElement.is_a('IfcWindow'):
-            opening.setAttribute('windowTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
             opening.setAttribute('openingType', 'OperableWindow')
         elif element.RelatedBuildingElement.is_a('IfcDoor'):
-            opening.setAttribute('doorTypeIdRef', fix_xml_id(element.RelatedBuildingElement.GlobalId))
             opening.setAttribute('openingType', 'NonSlidingDoor')
 
         opening.setAttribute('id', 'Opening%d' % opening_id)
@@ -423,10 +422,8 @@ for element in boundaries:
 # This new element is added as child to the earlier created 'gbXML' element
 elements = ifc_file.by_type('IfcWindow') + ifc_file.by_type('IfcDoor')
 for element in elements:
-    if element.is_a('IfcWindow'):
+    if element.is_a('IfcWindow') or element.is_a('IfcDoor'):
         opening_type = root.createElement('WindowType')
-    elif element.is_a('IfcDoor'):
-        opening_type = root.createElement('DoorType')
     opening_type.setAttribute('id', fix_xml_id(element.GlobalId))
     gbxml.appendChild(opening_type)
 
