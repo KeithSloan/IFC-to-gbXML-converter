@@ -534,7 +534,8 @@ for element in boundaries:
 
             # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
             name = root.createElement('Name')
-            name.appendChild(root.createTextNode(element.RelatedBuildingElement.HasAssociations[0].RelatingMaterial.
+            if hasattr(element.RelatedBuildingElement.HasAssociations[0].RelatingMaterial, 'ForLayerSet'):
+                name.appendChild(root.createTextNode(element.RelatedBuildingElement.HasAssociations[0].RelatingMaterial.
                                                  ForLayerSet.LayerSetName))
             construction.appendChild(name)
 
@@ -615,16 +616,17 @@ for element in buildingElements:
                 rValue.setAttribute('unit', 'SquareMeterKPerW')
 
                 # Analytical properties of the Material entity can be found directly
-                for material_property in l.Material.HasProperties:
-                    if material_property.Name == 'Pset_MaterialEnergy':
-                        for pset_material_energy in material_property.Properties:
-                            if pset_material_energy.Name == 'ThermalConductivityTemperatureDerivative':
-                                valueR = pset_material_energy.NominalValue.wrappedValue
-                                rValue.setAttribute('unit', 'SquareMeterKPerW')
-                                rValue.appendChild(root.createTextNode(str(valueR)))
-                                material.appendChild(rValue)
+                if hasattr(l.Material, 'HasProperties'):
+                    for material_property in l.Material.HasProperties:
+                        if material_property.Name == 'Pset_MaterialEnergy':
+                            for pset_material_energy in material_property.Properties:
+                                if pset_material_energy.Name == 'ThermalConductivityTemperatureDerivative':
+                                    valueR = pset_material_energy.NominalValue.wrappedValue
+                                    rValue.setAttribute('unit', 'SquareMeterKPerW')
+                                    rValue.appendChild(root.createTextNode(str(valueR)))
+                                    material.appendChild(rValue)
 
-                                gbxml.appendChild(material)
+                                    gbxml.appendChild(material)
 
                 # Specify analytical properties of the 'Material' element by iterating through IFC entities
                 thermalResistance = element.IsDefinedBy
