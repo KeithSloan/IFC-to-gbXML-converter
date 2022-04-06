@@ -241,6 +241,8 @@ for s in spaces:
                 point = root.createElement('CartesianPoint')
 
                 for c in x, y, z:
+                    if 'e-' in str(c):
+                        c = 0.0
                     coord = root.createElement('Coordinate')
                     coord.appendChild(root.createTextNode(str(c)))
                     point.appendChild(coord)
@@ -338,6 +340,8 @@ for element in boundaries:
             point = root.createElement('CartesianPoint')
 
             for c in x, y, z:
+                if 'e-' in str(c):
+                    c = 0.0
                 coord = root.createElement('Coordinate')
                 coord.appendChild(root.createTextNode(str(c)))
                 point.appendChild(coord)
@@ -392,6 +396,8 @@ for element in boundaries:
             point = root.createElement('CartesianPoint')
 
             for c in x, y, z:
+                if 'e-' in str(c):
+                    c = 0.0
                 coord = root.createElement('Coordinate')
                 coord.appendChild(root.createTextNode(str(c)))
                 point.appendChild(coord)
