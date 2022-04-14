@@ -27,36 +27,42 @@ def get_boundary_vertices(ifc_rel_space_boundary):
 
 
 # Align the gbXML input according to the predefined official gbXML schema
-def fix_xml_cmps(a):
-    return 'campus' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def remove_unnecessary_characters(element):
+    char_to_replace = {'$': '',':': '',' ' : '', '(':'', ')':''}
+    for key, value in char_to_replace.items():
+        element = element.replace(key, value)
+    return element
+
+def fix_xml_cmps(element):
+    return 'campus' + remove_unnecessary_characters(element)
 
 
-def fix_xml_bldng(a):
-    return 'building' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_bldng(element):
+    return 'building' + remove_unnecessary_characters(element)
 
 
-def fix_xml_stry(a):
-    return 'storey' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_stry(element):
+    return 'storey' + remove_unnecessary_characters(element)
 
 
-def fix_xml_spc(a):
-    return 'space' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_spc(element):
+    return 'space' + remove_unnecessary_characters(element)
 
 
-def fix_xml_id(a):
-    return 'id' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_id(element):
+    return 'id' + remove_unnecessary_characters(element)
 
 
-def fix_xml_name(a):
-    return 'object' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_name(element):
+    return 'object' + remove_unnecessary_characters(element)
 
 
-def fix_xml_cons(a):
-    return 'construct' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_cons(element):
+    return 'construct' + remove_unnecessary_characters(element)
 
 
-def fix_xml_layer(a):
-    return 'lyr' + a.replace('$', '').replace(':', '').replace(' ', '').replace('(', '').replace(')', '')
+def fix_xml_layer(element):
+    return 'lyr' + remove_unnecessary_characters(element)
 
 if not len(sys.argv) == 3:
     sys.exit("Usage: " + sys.argv[0] + " input.ifc output.gbXML")
@@ -83,8 +89,12 @@ dict_id = {}
 
 # Specify the 'Campus' element of the gbXML schema; making use of IFC entity 'IfcSite'
 # This element is added as child to the earlier created 'gbXML' element
-site = ifc_file.by_type('IfcSite')
-for element in site:
+# Site must have the Longitude attribute
+
+sites = ifc_file.by_type('IfcSite')
+sites = [site for site in sites if site.RefLongitude != None]
+
+for element in sites:
     campus = root.createElement('Campus')
     campus.setAttribute('id', fix_xml_cmps(element.GlobalId))
     gbxml.appendChild(campus)
