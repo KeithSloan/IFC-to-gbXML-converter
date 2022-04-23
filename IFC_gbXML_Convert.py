@@ -65,7 +65,7 @@ def fix_xml_layer(element):
     return 'lyr' + remove_unnecessary_characters(element)
 
 if not len(sys.argv) == 3:
-    sys.exit("Usage: " + sys.argv[0] + " input.ifc output.gbXML")
+    sys.exit("Usage: " + sys.argv[0] + " input.ifc output.xml")
 ifc_file = ifcopenshell.open(sys.argv[1])
 
 # Create the XML root by making use of MiniDom
@@ -538,19 +538,20 @@ for element in boundaries:
                                 absorptance.appendChild(root.createTextNode(str(valueAb)))
                                 construction.appendChild(absorptance)
 
-            # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-            layerId = fix_xml_layer(element.RelatedBuildingElement.HasAssociations[0].GlobalId)
+            for association in element.RelatedBuildingElement.HasAssociations:
+                if association.is_a('IfcRelAssociatesMaterial'):
+                    # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+                    layerId = fix_xml_layer(association.GlobalId)
 
-            layer_id = root.createElement('LayerId')
-            layer_id.setAttribute('layerIdRef', layerId)
-            construction.appendChild(layer_id)
+                    layer_id = root.createElement('LayerId')
+                    layer_id.setAttribute('layerIdRef', layerId)
+                    construction.appendChild(layer_id)
 
-            # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
-            name = root.createElement('Name')
-            if hasattr(element.RelatedBuildingElement.HasAssociations[0].RelatingMaterial, 'ForLayerSet'):
-                name.appendChild(root.createTextNode(element.RelatedBuildingElement.HasAssociations[0].RelatingMaterial.
-                                                 ForLayerSet.LayerSetName))
-            construction.appendChild(name)
+                    # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
+                    name = root.createElement('Name')
+                    if hasattr(association.RelatingMaterial, 'ForLayerSet'):
+                        name.appendChild(root.createTextNode(association.RelatingMaterial.ForLayerSet.LayerSetName))
+                    construction.appendChild(name)
 
             gbxml.appendChild(construction)
 
@@ -566,26 +567,28 @@ for element in buildingElements:
         # Try and catch an Element that is just an Aggregate
         if element.IsDecomposedBy:
             continue
-        # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-        layerId = fix_xml_layer(element.HasAssociations[0].GlobalId)
+        for association in element.HasAssociations:
+            if association.is_a('IfcRelAssociatesMaterial'):
+                # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+                layerId = fix_xml_layer(association.GlobalId)
 
-        layer = root.createElement('Layer')
-        layer.setAttribute('id', layerId)
+                layer = root.createElement('Layer')
+                layer.setAttribute('id', layerId)
 
-        dict_id[layerId] = layer
+                dict_id[layerId] = layer
 
-        # Specify the 'IfcMaterialLayer' entity and iterate to each 'IfcMaterial' entity
-        if not element.HasAssociations[0].RelatingMaterial.is_a('IfcMaterialLayerSetUsage'):
-            continue
-        materials = element.HasAssociations[0].RelatingMaterial.ForLayerSet.MaterialLayers
-        for l in materials:
-            material_id = root.createElement('MaterialId')
-            material_id.setAttribute('materialIdRef', "mat_%d" % l.Material.id())
-            layer.appendChild(material_id)
+                # Specify the 'IfcMaterialLayer' entity and iterate to each 'IfcMaterial' entity
+                if not association.RelatingMaterial.is_a('IfcMaterialLayerSetUsage'):
+                    continue
+                materials = association.RelatingMaterial.ForLayerSet.MaterialLayers
+                for l in materials:
+                    material_id = root.createElement('MaterialId')
+                    material_id.setAttribute('materialIdRef', "mat_%d" % l.Material.id())
+                    layer.appendChild(material_id)
 
-            dict_id["mat_%d" % l.Material.id()] = layer
+                    dict_id["mat_%d" % l.Material.id()] = layer
 
-            gbxml.appendChild(layer)
+                gbxml.appendChild(layer)
 
     else:
         continue
@@ -600,89 +603,92 @@ for element in buildingElements:
         # Try and catch an Element that is just an Aggregate
         if element.IsDecomposedBy:
             continue
-        if not element.HasAssociations[0].RelatingMaterial.is_a('IfcMaterialLayerSetUsage'):
-            continue
-        materials = element.HasAssociations[0].RelatingMaterial.ForLayerSet.MaterialLayers
+        for association in element.HasAssociations:
+            if not association.is_a('IfcRelAssociatesMaterial'):
+                continue
+            if not association.RelatingMaterial.is_a('IfcMaterialLayerSetUsage'):
+                continue
+            materials = association.RelatingMaterial.ForLayerSet.MaterialLayers
 
-        for l in materials:
-            item = l.Material.id()
+            for l in materials:
+                item = l.Material.id()
 
-            # Make use of a list to make sure no same 'Materials' elements are added twice
-            if item not in listMat:
-                listMat.append(item)
+                # Make use of a list to make sure no same 'Materials' elements are added twice
+                if item not in listMat:
+                    listMat.append(item)
 
-                material = root.createElement('Material')
-                material.setAttribute('id', "mat_%d" % l.Material.id())
-                dict_id["mat_%d" % l.Material.id()] = material
+                    material = root.createElement('Material')
+                    material.setAttribute('id', "mat_%d" % l.Material.id())
+                    dict_id["mat_%d" % l.Material.id()] = material
 
-                name = root.createElement('Name')
-                name.appendChild(root.createTextNode(l.Material.Name))
-                material.appendChild(name)
+                    name = root.createElement('Name')
+                    name.appendChild(root.createTextNode(l.Material.Name))
+                    material.appendChild(name)
 
-                thickness = root.createElement('Thickness')
-                thickness.setAttribute('unit', 'Meters')
-                valueT = l.LayerThickness
-                thickness.appendChild(root.createTextNode((str(valueT))))
-                material.appendChild(thickness)
+                    thickness = root.createElement('Thickness')
+                    thickness.setAttribute('unit', 'Meters')
+                    valueT = l.LayerThickness
+                    thickness.appendChild(root.createTextNode((str(valueT))))
+                    material.appendChild(thickness)
 
-                rValue = root.createElement('R-value')
-                rValue.setAttribute('unit', 'SquareMeterKPerW')
+                    rValue = root.createElement('R-value')
+                    rValue.setAttribute('unit', 'SquareMeterKPerW')
 
-                # Analytical properties of the Material entity can be found directly
-                if hasattr(l.Material, 'HasProperties'):
-                    for material_property in l.Material.HasProperties:
-                        if material_property.Name == 'Pset_MaterialEnergy':
-                            for pset_material_energy in material_property.Properties:
-                                if pset_material_energy.Name == 'ThermalConductivityTemperatureDerivative':
-                                    valueR = pset_material_energy.NominalValue.wrappedValue
-                                    rValue.setAttribute('unit', 'SquareMeterKPerW')
-                                    rValue.appendChild(root.createTextNode(str(valueR)))
-                                    material.appendChild(rValue)
+                    # Analytical properties of the Material entity can be found directly
+                    if hasattr(l.Material, 'HasProperties'):
+                        for material_property in l.Material.HasProperties:
+                            if material_property.Name == 'Pset_MaterialEnergy':
+                                for pset_material_energy in material_property.Properties:
+                                    if pset_material_energy.Name == 'ThermalConductivityTemperatureDerivative':
+                                        valueR = pset_material_energy.NominalValue.wrappedValue
+                                        rValue.setAttribute('unit', 'SquareMeterKPerW')
+                                        rValue.appendChild(root.createTextNode(str(valueR)))
+                                        material.appendChild(rValue)
 
-                                    gbxml.appendChild(material)
+                                        gbxml.appendChild(material)
 
-                # Specify analytical properties of the 'Material' element by iterating through IFC entities
-                thermalResistance = element.IsDefinedBy
-                for r in thermalResistance:
-                    if r.is_a('IfcRelDefinesByType'):
-                        if r.RelatingType.is_a('IfcWallType'):
-                            for p in r.RelatingType.HasPropertySets:
-                                if p.Name == 'Analytical Properties(Type)':
-                                    for t in p.HasProperties:
-                                        if t.Name == 'Heat Transfer Coefficient (U)':
-                                            valueU = t.NominalValue.wrappedValue
-                                            valueR = valueT / valueU
-                                            rValue.appendChild(root.createTextNode(str(valueR)))
-                                            material.appendChild(rValue)
-
-                                            gbxml.appendChild(material)
-
-                    if r.is_a('IfcRelDefinesByProperties'):
-                        if r.RelatingPropertyDefinition.is_a('IfcPropertySet'):
-                            for p in r.RelatingPropertyDefinition.HasProperties:
-                                if p.Name == 'Heat Transfer Coefficient (U)':
-                                    valueU = p.NominalValue.wrappedValue
-                                    valueR = valueT / valueU
-                                    rValue.setAttribute('unit', 'SquareMeterKPerW')
-                                    rValue.appendChild(root.createTextNode(str(valueR)))
-                                    material.appendChild(rValue)
-
-                                    gbxml.appendChild(material)
-
-                    if element.is_a('IfcCovering'):
-                        if r.is_a('IfcRelDefinesByProperties'):
-                            if r.RelatingType.is_a('IfcPropertySet'):
+                    # Specify analytical properties of the 'Material' element by iterating through IFC entities
+                    thermalResistance = element.IsDefinedBy
+                    for r in thermalResistance:
+                        if r.is_a('IfcRelDefinesByType'):
+                            if r.RelatingType.is_a('IfcWallType'):
                                 for p in r.RelatingType.HasPropertySets:
                                     if p.Name == 'Analytical Properties(Type)':
                                         for t in p.HasProperties:
                                             if t.Name == 'Heat Transfer Coefficient (U)':
                                                 valueU = t.NominalValue.wrappedValue
                                                 valueR = valueT / valueU
-                                                rValue.setAttribute('unit', 'SquareMeterKPerW')
                                                 rValue.appendChild(root.createTextNode(str(valueR)))
                                                 material.appendChild(rValue)
 
                                                 gbxml.appendChild(material)
+
+                        if r.is_a('IfcRelDefinesByProperties'):
+                            if r.RelatingPropertyDefinition.is_a('IfcPropertySet'):
+                                for p in r.RelatingPropertyDefinition.HasProperties:
+                                    if p.Name == 'Heat Transfer Coefficient (U)':
+                                        valueU = p.NominalValue.wrappedValue
+                                        valueR = valueT / valueU
+                                        rValue.setAttribute('unit', 'SquareMeterKPerW')
+                                        rValue.appendChild(root.createTextNode(str(valueR)))
+                                        material.appendChild(rValue)
+
+                                        gbxml.appendChild(material)
+
+                        if element.is_a('IfcCovering'):
+                            if r.is_a('IfcRelDefinesByProperties') and hasattr(r, 'RelatingType'):
+                                if r.RelatingType.is_a('IfcPropertySet'):
+                                    for p in r.RelatingType.HasPropertySets:
+                                        if p.Name == 'Analytical Properties(Type)':
+                                            for t in p.HasProperties:
+                                                if t.Name == 'Heat Transfer Coefficient (U)':
+                                                    valueU = t.NominalValue.wrappedValue
+                                                    valueR = valueT / valueU
+                                                    rValue.setAttribute('unit', 'SquareMeterKPerW')
+                                                    rValue.appendChild(root.createTextNode(str(valueR)))
+                                                    material.appendChild(rValue)
+
+                                                    gbxml.appendChild(material)
 
     else:
         continue
