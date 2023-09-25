@@ -278,7 +278,9 @@ for ifc_site in ifc_sites:
                     space_boundary.appendChild(planar_geometry)
 
                     ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-                    planar_geometry.appendChild(get_poly_loop(root, vertices, ifc_relating_space))
+                    planar_geometry.appendChild(
+                        get_poly_loop(root, vertices, ifc_relating_space)
+                    )
 
 # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
 # This new element is added as child to the earlier created 'Campus' element
@@ -323,8 +325,6 @@ for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
                 surface.setAttribute("surfaceType", "ExteriorWall")
             elif ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_FIRE":
                 surface.setAttribute("surfaceType", "ExteriorWall")
-            elif ifc_rel_space_boundary.InternalOrExternalBoundary == "INTERNAL":
-                surface.setAttribute("surfaceType", "InteriorWall")
             else:
                 surface.setAttribute("surfaceType", "InteriorWall")
 
@@ -390,10 +390,7 @@ for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
         opening.appendChild(planar_geometry)
 
         ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-        new_z = ifc_relating_space.ObjectPlacement.PlacementRelTo.RelativePlacement.Location.Coordinates[
-            2
-        ]
-        planar_geometry.appendChild(get_poly_loop(root, vertices, new_z))
+        planar_geometry.appendChild(get_poly_loop(root, vertices, ifc_relating_space))
 
         name = root.createElement("Name")
         name.appendChild(
