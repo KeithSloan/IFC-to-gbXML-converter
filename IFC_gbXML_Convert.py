@@ -94,509 +94,533 @@ def fix_xml_layer(element):
     return "lyr" + remove_unnecessary_characters(element)
 
 
-if not len(sys.argv) == 3:
-    sys.exit("Usage: " + sys.argv[0] + " input.ifc output.xml")
-ifc_file = ifcopenshell.open(sys.argv[1])
+def create_gbxml(ifc_file):
+    # Create the XML root by making use of MiniDom
+    root = minidom.Document()
 
-# Create the XML root by making use of MiniDom
-root = minidom.Document()
+    # Create the 'gbXML' element and append it to the Root of the document
+    gbxml = root.createElement("gbXML")
+    root.appendChild(gbxml)
 
-# Create the 'gbXML' element and append it to the Root of the document
-gbxml = root.createElement("gbXML")
-root.appendChild(gbxml)
+    # Create attributes for the 'gbXML' element
+    gbxml.setAttribute("xmlns", "http://www.gbxml.org/schema")
+    gbxml.setAttribute("temperatureUnit", "C")
+    gbxml.setAttribute("lengthUnit", "Meters")
+    gbxml.setAttribute("areaUnit", "SquareMeters")
+    gbxml.setAttribute("volumeUnit", "CubicMeters")
+    gbxml.setAttribute("useSIUnitsForResults", "true")
+    gbxml.setAttribute("version", "0.37")
 
-# Create attributes for the 'gbXML' element
-gbxml.setAttribute("xmlns", "http://www.gbxml.org/schema")
-gbxml.setAttribute("temperatureUnit", "C")
-gbxml.setAttribute("lengthUnit", "Meters")
-gbxml.setAttribute("areaUnit", "SquareMeters")
-gbxml.setAttribute("volumeUnit", "CubicMeters")
-gbxml.setAttribute("useSIUnitsForResults", "true")
-gbxml.setAttribute("version", "0.37")
+    # Create a dictionary to store all gbXML element Ids
+    dict_id = {}
 
-# Create a dictionary to store all gbXML element Ids
-dict_id = {}
+    # Specify the 'Campus' element of the gbXML schema; making use of IFC entity 'IfcSite'
+    # This element is added as child to the earlier created 'gbXML' element
+    # Site must have the Longitude attribute
 
-# Specify the 'Campus' element of the gbXML schema; making use of IFC entity 'IfcSite'
-# This element is added as child to the earlier created 'gbXML' element
-# Site must have the Longitude attribute
+    ifc_sites = ifc_file.by_type("IfcSite")
+    ifc_sites = [ifc_site for ifc_site in ifc_sites if ifc_site.RefLongitude != None]
 
-ifc_sites = ifc_file.by_type("IfcSite")
-ifc_sites = [ifc_site for ifc_site in ifc_sites if ifc_site.RefLongitude != None]
+    for ifc_site in ifc_sites:
+        campus = root.createElement("Campus")
+        campus.setAttribute("id", fix_xml_cmps(ifc_site.GlobalId))
+        gbxml.appendChild(campus)
 
-for ifc_site in ifc_sites:
-    campus = root.createElement("Campus")
-    campus.setAttribute("id", fix_xml_cmps(ifc_site.GlobalId))
-    gbxml.appendChild(campus)
+        dict_id[fix_xml_cmps(ifc_site.GlobalId)] = campus
 
-    dict_id[fix_xml_cmps(ifc_site.GlobalId)] = campus
+        # Specify the 'Location' element of the gbXML schema; making use of IFC entities 'IfcSite' and 'IfcPostalAddress'
+        # This new element is added as child to the earlier created 'Campus' element
+        location = root.createElement("Location")
+        campus.appendChild(location)
 
-    # Specify the 'Location' element of the gbXML schema; making use of IFC entities 'IfcSite' and 'IfcPostalAddress'
-    # This new element is added as child to the earlier created 'Campus' element
-    location = root.createElement("Location")
-    campus.appendChild(location)
+        longitude = root.createElement("Longitude")
+        longitudeValue = str(ifc_site.RefLongitude[0])
+        longitude.appendChild(root.createTextNode(longitudeValue))
+        location.appendChild(longitude)
 
-    longitude = root.createElement("Longitude")
-    longitudeValue = str(ifc_site.RefLongitude[0])
-    longitude.appendChild(root.createTextNode(longitudeValue))
-    location.appendChild(longitude)
+        latitude = root.createElement("Latitude")
+        latitudeValue = str(ifc_site.RefLatitude[0])
+        latitude.appendChild(root.createTextNode(latitudeValue))
+        location.appendChild(latitude)
 
-    latitude = root.createElement("Latitude")
-    latitudeValue = str(ifc_site.RefLatitude[0])
-    latitude.appendChild(root.createTextNode(latitudeValue))
-    location.appendChild(latitude)
+        elevation = root.createElement("Elevation")
+        elevation.appendChild(root.createTextNode(str(ifc_site.RefElevation)))
+        location.appendChild(elevation)
 
-    elevation = root.createElement("Elevation")
-    elevation.appendChild(root.createTextNode(str(ifc_site.RefElevation)))
-    location.appendChild(elevation)
-
-    # FIXME assigns all Postal Addresses to all Locations
-    for ifc_postal_address in ifc_file.by_type("IfcPostalAddress"):
-        zipcode = root.createElement("ZipcodeOrPostalCode")
-        zipcode.appendChild(root.createTextNode(ifc_postal_address.PostalCode))
-        location.appendChild(zipcode)
-
-        name = root.createElement("Name")
-        name.appendChild(
-            root.createTextNode(
-                ifc_postal_address.Region + ", " + ifc_postal_address.Country
-            )
-        )
-        location.appendChild(name)
-
-    # Specify the 'Building' element of the gbXML schema; making use of IFC entity 'IfcBuilding'
-    # This new element is added as child to the earlier created 'Campus' element
-    # FIXME assigns all Buildings to all Campuses
-    for ifc_building in ifc_file.by_type("IfcBuilding"):
-        building = root.createElement("Building")
-        building.setAttribute("id", fix_xml_bldng(ifc_building.GlobalId))
-        building.setAttribute("buildingType", "Unknown")
-        campus.appendChild(building)
-
-        dict_id[fix_xml_bldng(ifc_building.GlobalId)] = building
-
-        # FIXME assigns all Postal Addresses to all buildings
+        # FIXME assigns all Postal Addresses to all Locations
         for ifc_postal_address in ifc_file.by_type("IfcPostalAddress"):
-            street_address = root.createElement("StreetAddress")
-            street_address.appendChild(
+            zipcode = root.createElement("ZipcodeOrPostalCode")
+            zipcode.appendChild(root.createTextNode(ifc_postal_address.PostalCode))
+            location.appendChild(zipcode)
+
+            name = root.createElement("Name")
+            name.appendChild(
                 root.createTextNode(
                     ifc_postal_address.Region + ", " + ifc_postal_address.Country
                 )
             )
-            building.appendChild(street_address)
+            location.appendChild(name)
 
-        # Specify the 'BuildingStorey' element of the gbXML schema; making use of IFC entity 'IfcBuildingStorey'
-        # This new element is added as child to the earlier created 'Building' element
-        # FIXME assigns all Storeys to all Buildings
-        storey_id = 1
-        for ifc_building_storey in ifc_file.by_type("IfcBuildingStorey"):
-            building_storey = root.createElement("BuildingStorey")
-            building_storey.setAttribute(
-                "id", fix_xml_stry(ifc_building_storey.GlobalId)
-            )
-            building.appendChild(building_storey)
+        # Specify the 'Building' element of the gbXML schema; making use of IFC entity 'IfcBuilding'
+        # This new element is added as child to the earlier created 'Campus' element
+        # FIXME assigns all Buildings to all Campuses
+        for ifc_building in ifc_file.by_type("IfcBuilding"):
+            building = root.createElement("Building")
+            building.setAttribute("id", fix_xml_bldng(ifc_building.GlobalId))
+            building.setAttribute("buildingType", "Unknown")
+            campus.appendChild(building)
 
-            dict_id[fix_xml_stry(ifc_building_storey.GlobalId)] = building_storey
+            dict_id[fix_xml_bldng(ifc_building.GlobalId)] = building
 
-            name = root.createElement("Name")
-            name.appendChild(root.createTextNode("Storey_%d" % storey_id))
-            storey_id += 1
-            building_storey.appendChild(name)
+            # FIXME assigns all Postal Addresses to all buildings
+            for ifc_postal_address in ifc_file.by_type("IfcPostalAddress"):
+                street_address = root.createElement("StreetAddress")
+                street_address.appendChild(
+                    root.createTextNode(
+                        ifc_postal_address.Region + ", " + ifc_postal_address.Country
+                    )
+                )
+                building.appendChild(street_address)
 
-            level = root.createElement("Level")
-            level.appendChild(root.createTextNode(str(ifc_building_storey.Elevation)))
-            building_storey.appendChild(level)
+            # Specify the 'BuildingStorey' element of the gbXML schema; making use of IFC entity 'IfcBuildingStorey'
+            # This new element is added as child to the earlier created 'Building' element
+            # FIXME assigns all Storeys to all Buildings
+            storey_id = 1
+            for ifc_building_storey in ifc_file.by_type("IfcBuildingStorey"):
+                building_storey = root.createElement("BuildingStorey")
+                building_storey.setAttribute(
+                    "id", fix_xml_stry(ifc_building_storey.GlobalId)
+                )
+                building.appendChild(building_storey)
 
-        # FIXME assigns all Spaces to all Buildings
-        # Specify the 'Space' element of the gbXML schema; making use of IFC entity 'IfcSpace'
-        # This new element is added as child to the earlier created 'Building' element
-        space_id = 1
-        for ifc_space in ifc_file.by_type("IfcSpace"):
-            space = root.createElement("Space")
-            space.setAttribute("id", fix_xml_spc(ifc_space.GlobalId))
-            building.appendChild(space)
+                dict_id[fix_xml_stry(ifc_building_storey.GlobalId)] = building_storey
 
-            dict_id[fix_xml_spc(ifc_space.GlobalId)] = space
+                name = root.createElement("Name")
+                name.appendChild(root.createTextNode("Storey_%d" % storey_id))
+                storey_id += 1
+                building_storey.appendChild(name)
 
-            # Refer to the relating 'BuildingStorey' GUID by iterating through IFC entities
-            space.setAttribute(
-                "buildingStoreyIdRef",
-                fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
-            )
+                level = root.createElement("Level")
+                level.appendChild(
+                    root.createTextNode(str(ifc_building_storey.Elevation))
+                )
+                building_storey.appendChild(level)
 
-            area = root.createElement("Area")
-            volume = root.createElement("Volume")
+            # FIXME assigns all Spaces to all Buildings
+            # Specify the 'Space' element of the gbXML schema; making use of IFC entity 'IfcSpace'
+            # This new element is added as child to the earlier created 'Building' element
+            space_id = 1
+            for ifc_space in ifc_file.by_type("IfcSpace"):
+                space = root.createElement("Space")
+                space.setAttribute("id", fix_xml_spc(ifc_space.GlobalId))
+                building.appendChild(space)
 
-            for ifc_rel in ifc_space.IsDefinedBy:
-                if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                    if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                        for (
-                            ifc_property
-                        ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                            ifc_value = ifc_property.NominalValue.wrappedValue
-                            if ifc_property.Name == "Area":
-                                area.appendChild(root.createTextNode(str(ifc_value)))
-                                space.appendChild(area)
-                            if ifc_property.Name == "Volume":
-                                volume.appendChild(root.createTextNode(str(ifc_value)))
-                                space.appendChild(volume)
+                dict_id[fix_xml_spc(ifc_space.GlobalId)] = space
 
-            name = root.createElement("Name")
-            name.appendChild(root.createTextNode("Space_%d" % space_id))
-            space_id += 1
-            space.appendChild(name)
+                # Refer to the relating 'BuildingStorey' GUID by iterating through IFC entities
+                space.setAttribute(
+                    "buildingStoreyIdRef",
+                    fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
+                )
 
-            # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
-            # This new element is added as child to the earlier created 'Space' element
-            for ifc_rel_space_boundary in ifc_space.BoundedBy:
+                area = root.createElement("Area")
+                volume = root.createElement("Volume")
 
-                # Make sure a 'SpaceBoundary' is representing an actual element
-                if ifc_rel_space_boundary.RelatedBuildingElement == None:
-                    continue
+                for ifc_rel in ifc_space.IsDefinedBy:
+                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
+                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
+                            for (
+                                ifc_property
+                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
+                                ifc_value = ifc_property.NominalValue.wrappedValue
+                                if ifc_property.Name == "Area":
+                                    area.appendChild(
+                                        root.createTextNode(str(ifc_value))
+                                    )
+                                    space.appendChild(area)
+                                if ifc_property.Name == "Volume":
+                                    volume.appendChild(
+                                        root.createTextNode(str(ifc_value))
+                                    )
+                                    space.appendChild(volume)
 
-                vertices = get_boundary_vertices(ifc_rel_space_boundary)
+                name = root.createElement("Name")
+                name.appendChild(root.createTextNode("Space_%d" % space_id))
+                space_id += 1
+                space.appendChild(name)
 
-                # Create 'SpaceBoundary' elements for the following building elements
+                # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
+                # This new element is added as child to the earlier created 'Space' element
+                for ifc_rel_space_boundary in ifc_space.BoundedBy:
+
+                    # Make sure a 'SpaceBoundary' is representing an actual element
+                    if ifc_rel_space_boundary.RelatedBuildingElement == None:
+                        continue
+
+                    vertices = get_boundary_vertices(ifc_rel_space_boundary)
+
+                    # Create 'SpaceBoundary' elements for the following building elements
+                    if (
+                        ifc_rel_space_boundary.RelatedBuildingElement.is_a(
+                            "IfcCovering"
+                        )
+                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
+                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
+                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
+                    ):
+
+                        space_boundary = root.createElement("SpaceBoundary")
+                        space_boundary.setAttribute("isSecondLevelBoundary", "true")
+
+                        # Refer to the relating 'SpaceBoundary' GUID by iterating through IFC entities
+                        space_boundary.setAttribute(
+                            "surfaceIdRef", fix_xml_id(ifc_rel_space_boundary.GlobalId)
+                        )
+
+                        space.appendChild(space_boundary)
+
+                        planar_geometry = root.createElement("PlanarGeometry")
+                        space_boundary.appendChild(planar_geometry)
+
+                        ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
+                        planar_geometry.appendChild(
+                            get_poly_loop(root, vertices, ifc_relating_space)
+                        )
+
+    # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
+    # This new element is added as child to the earlier created 'Campus' element
+    opening_id = 1
+    for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
+
+        # Make sure a 'SpaceBoundary' is representing an actual element
+        if ifc_rel_space_boundary.RelatedBuildingElement == None:
+            continue
+        if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
+            continue
+
+        # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
+        vertices = get_boundary_vertices(ifc_rel_space_boundary)
+
+        # Specify each 'Surface' element and set 'SurfaceType' attributes
+        if (
+            ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering")
+            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
+            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
+            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
+        ):
+
+            surface = root.createElement("Surface")
+            surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
+            dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
+
+            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering"):
+                surface.setAttribute("surfaceType", "Ceiling")
+
+            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof"):
+                surface.setAttribute("surfaceType", "Roof")
+
+            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab"):
                 if (
-                    ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering")
-                    or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
-                    or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
-                    or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
+                    ifc_rel_space_boundary.InternalOrExternalBoundary
+                    == "EXTERNAL_EARTH"
                 ):
+                    surface.setAttribute("surfaceType", "SlabOnGrade")
+                else:
+                    surface.setAttribute("surfaceType", "InteriorFloor")
 
-                    space_boundary = root.createElement("SpaceBoundary")
-                    space_boundary.setAttribute("isSecondLevelBoundary", "true")
+            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall"):
+                if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL":
+                    surface.setAttribute("surfaceType", "ExteriorWall")
+                elif (
+                    ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_FIRE"
+                ):
+                    surface.setAttribute("surfaceType", "ExteriorWall")
+                else:
+                    surface.setAttribute("surfaceType", "InteriorWall")
 
-                    # Refer to the relating 'SpaceBoundary' GUID by iterating through IFC entities
-                    space_boundary.setAttribute(
-                        "surfaceIdRef", fix_xml_id(ifc_rel_space_boundary.GlobalId)
-                    )
+            # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+            surface.setAttribute(
+                "constructionIdRef",
+                fix_xml_cons(
+                    ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
+                        0
+                    ].GlobalId
+                ),
+            )
 
-                    space.appendChild(space_boundary)
+            name = root.createElement("Name")
+            name.appendChild(
+                root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
+            )
 
-                    planar_geometry = root.createElement("PlanarGeometry")
-                    space_boundary.appendChild(planar_geometry)
+            surface.appendChild(name)
 
-                    ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-                    planar_geometry.appendChild(
-                        get_poly_loop(root, vertices, ifc_relating_space)
-                    )
+            adjacent_space_id = root.createElement("AdjacentSpaceId")
 
-# Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
-# This new element is added as child to the earlier created 'Campus' element
-opening_id = 1
-for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
+            # Refer to the relating 'Space' GUID by iterating through IFC entities
+            adjacent_space_id.setAttribute(
+                "spaceIdRef", fix_xml_spc(ifc_rel_space_boundary.RelatingSpace.GlobalId)
+            )
+            surface.appendChild(adjacent_space_id)
 
-    # Make sure a 'SpaceBoundary' is representing an actual element
-    if ifc_rel_space_boundary.RelatedBuildingElement == None:
-        continue
-    if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
-        continue
+            planar_geometry = root.createElement("PlanarGeometry")
+            surface.appendChild(planar_geometry)
 
-    # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
-    vertices = get_boundary_vertices(ifc_rel_space_boundary)
+            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
+            planar_geometry.appendChild(
+                get_poly_loop(root, vertices, ifc_relating_space)
+            )
 
-    # Specify each 'Surface' element and set 'SurfaceType' attributes
-    if (
-        ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
-    ):
+            cad_object_id = root.createElement("CADObjectId")
+            cad_object_id.appendChild(
+                root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
+            )
+            surface.appendChild(cad_object_id)
 
-        surface = root.createElement("Surface")
-        surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
-        dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
+        if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
+            "IfcWindow"
+        ) or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering"):
-            surface.setAttribute("surfaceType", "Ceiling")
+            opening = root.createElement("Opening")
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof"):
-            surface.setAttribute("surfaceType", "Roof")
+            # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
+            opening.setAttribute(
+                "windowTypeIdRef",
+                fix_xml_id(ifc_rel_space_boundary.RelatedBuildingElement.GlobalId),
+            )
+            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWindow"):
+                opening.setAttribute("openingType", "OperableWindow")
+            elif ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
+                opening.setAttribute("openingType", "NonSlidingDoor")
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab"):
-            if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_EARTH":
-                surface.setAttribute("surfaceType", "SlabOnGrade")
-            else:
-                surface.setAttribute("surfaceType", "InteriorFloor")
+            opening.setAttribute("id", "Opening%d" % opening_id)
+            opening_id += 1
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall"):
-            if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL":
-                surface.setAttribute("surfaceType", "ExteriorWall")
-            elif ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_FIRE":
-                surface.setAttribute("surfaceType", "ExteriorWall")
-            else:
-                surface.setAttribute("surfaceType", "InteriorWall")
+            # If the building element is an 'IfcWindow' the gbXML element 'Opening' is added
+            planar_geometry = root.createElement("PlanarGeometry")
+            opening.appendChild(planar_geometry)
 
-        # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-        surface.setAttribute(
-            "constructionIdRef",
-            fix_xml_cons(
-                ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
-                    0
-                ].GlobalId
-            ),
-        )
+            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
+            planar_geometry.appendChild(
+                get_poly_loop(root, vertices, ifc_relating_space)
+            )
 
-        name = root.createElement("Name")
-        name.appendChild(
-            root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
-        )
+            name = root.createElement("Name")
+            name.appendChild(
+                root.createTextNode(
+                    fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
+                )
+            )
+            opening.appendChild(name)
 
-        surface.appendChild(name)
+            cad_object_id = root.createElement("CADObjectId")
+            cad_object_id.appendChild(
+                root.createTextNode(
+                    fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
+                )
+            )
+            opening.appendChild(cad_object_id)
 
-        adjacent_space_id = root.createElement("AdjacentSpaceId")
-
-        # Refer to the relating 'Space' GUID by iterating through IFC entities
-        adjacent_space_id.setAttribute(
-            "spaceIdRef", fix_xml_spc(ifc_rel_space_boundary.RelatingSpace.GlobalId)
-        )
-        surface.appendChild(adjacent_space_id)
-
-        planar_geometry = root.createElement("PlanarGeometry")
-        surface.appendChild(planar_geometry)
-
-        ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-        planar_geometry.appendChild(get_poly_loop(root, vertices, ifc_relating_space))
-
-        cad_object_id = root.createElement("CADObjectId")
-        cad_object_id.appendChild(
-            root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
-        )
-        surface.appendChild(cad_object_id)
+            # FIXME this only works if the wall is listed before its windows
+            surface.appendChild(opening)
 
         campus.appendChild(surface)
 
-    if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
-        "IfcWindow"
-    ) or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
-        opening = root.createElement("Opening")
-
-        # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
-        opening.setAttribute(
-            "windowTypeIdRef",
-            fix_xml_id(ifc_rel_space_boundary.RelatedBuildingElement.GlobalId),
-        )
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWindow"):
-            opening.setAttribute("openingType", "OperableWindow")
-        elif ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
-            opening.setAttribute("openingType", "NonSlidingDoor")
-
-        opening.setAttribute("id", "Opening%d" % opening_id)
-        opening_id += 1
-
-        # If the building element is an 'IfcWindow' the gbXML element 'Opening' is added
-        planar_geometry = root.createElement("PlanarGeometry")
-        opening.appendChild(planar_geometry)
-
-        ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-        planar_geometry.appendChild(get_poly_loop(root, vertices, ifc_relating_space))
-
-        name = root.createElement("Name")
-        name.appendChild(
-            root.createTextNode(
-                fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
-            )
-        )
-        opening.appendChild(name)
-
-        cad_object_id = root.createElement("CADObjectId")
-        cad_object_id.appendChild(
-            root.createTextNode(
-                fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
-            )
-        )
-        opening.appendChild(cad_object_id)
-
-        surface.appendChild(opening)
-
-    else:
-        continue
-
-# Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
-# This new element is added as child to the earlier created 'gbXML' element
-for ifc_building_element in ifc_file.by_type("IfcWindow") + ifc_file.by_type("IfcDoor"):
-
-    # There doesn't appear to be a 'DoorType'
-    if ifc_building_element.is_a("IfcWindow") or ifc_building_element.is_a("IfcDoor"):
-        window_type = root.createElement("WindowType")
-
-    window_type.setAttribute("id", fix_xml_id(ifc_building_element.GlobalId))
-    gbxml.appendChild(window_type)
-
-    dict_id[fix_xml_id(ifc_building_element.GlobalId)] = window_type
-
-    name = root.createElement("Name")
-    name.appendChild(root.createTextNode(fix_xml_name(ifc_building_element.Name)))
-    window_type.appendChild(name)
-
-    description = root.createElement("Description")
-    description.appendChild(
-        root.createTextNode(fix_xml_name(ifc_building_element.Name))
-    )
-    window_type.appendChild(description)
-
-    # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
-
-    u_value = root.createElement("U-value")
-    for ifc_rel in ifc_building_element.IsDefinedBy:
-        if ifc_rel.is_a("IfcRelDefinesByProperties"):
-            if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                for ifc_property in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                    if ifc_property.Name == "ThermalTransmittance":
-                        ifc_value = ifc_property.NominalValue.wrappedValue
-                        u_value.setAttribute("unit", "WPerSquareMeterK")
-                        u_value.appendChild(root.createTextNode(str(ifc_value)))
-                        window_type.appendChild(u_value)
-
-    solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
-    transmittance = root.createElement("Transmittance")
-    for ifc_rel in ifc_building_element.IsDefinedBy:
-        if ifc_rel.is_a("IfcRelDefinesByType"):
-            if ifc_rel.RelatingType.is_a("IfcTypeProduct"):
-                for ifc_property_set in ifc_rel.RelatingType.HasPropertySets:
-                    if ifc_property_set.Name == "Analytical Properties(Type)":
-                        for ifc_property in ifc_property_set.HasProperties:
-                            ifc_value = ifc_property.NominalValue.wrappedValue
-                            if ifc_property.Name == "Solar Heat Gain Coefficient":
-                                solar_heat_gain_coeff.setAttribute("unit", "Fraction")
-                                solar_heat_gain_coeff.appendChild(
-                                    root.createTextNode(str(ifc_value))
-                                )
-                                window_type.appendChild(solar_heat_gain_coeff)
-
-                            if ifc_property.Name == "Visual Light Transmittance":
-                                transmittance.setAttribute("unit", "Fraction")
-                                transmittance.setAttribute("type", "Visible")
-                                transmittance.appendChild(
-                                    root.createTextNode(str(ifc_value))
-                                )
-                                window_type.appendChild(transmittance)
-
-# Specify the 'Construction' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
-# This new element is added as child to the earlier created 'gbXML' element
-ifc_global_ids = []
-
-for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
-    # Make sure a 'SpaceBoundary' is representing an actual element
-    if ifc_rel_space_boundary.RelatedBuildingElement is None:
-        continue
-
-    if (
-        ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
-        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
+    # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
+    # This new element is added as child to the earlier created 'gbXML' element
+    for ifc_building_element in ifc_file.by_type("IfcWindow") + ifc_file.by_type(
+        "IfcDoor"
     ):
 
-        # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-        ifc_global_id = ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
-            0
-        ].GlobalId
+        # There doesn't appear to be a 'DoorType'
+        window_type = root.createElement("WindowType")
+        window_type.setAttribute("id", fix_xml_id(ifc_building_element.GlobalId))
+        dict_id[fix_xml_id(ifc_building_element.GlobalId)] = window_type
 
-        # Make use of a list to make sure no same 'Construction' elements are added twice
-        if ifc_global_id not in ifc_global_ids:
-            ifc_global_ids.append(ifc_global_id)
+        name = root.createElement("Name")
+        name.appendChild(root.createTextNode(fix_xml_name(ifc_building_element.Name)))
+        window_type.appendChild(name)
 
-            construction = root.createElement("Construction")
-            construction.setAttribute("id", fix_xml_cons(ifc_global_id))
-            dict_id[fix_xml_cons(ifc_global_id)] = construction
+        description = root.createElement("Description")
+        description.appendChild(
+            root.createTextNode(fix_xml_name(ifc_building_element.Name))
+        )
+        window_type.appendChild(description)
 
-            # Specify analytical properties of the 'Construction' element by iterating through IFC entities
+        # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
-            u_value = root.createElement("U-value")
-            for ifc_rel in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
-                if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                    if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                        for (
-                            ifc_property
-                        ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
+        u_value = root.createElement("U-value")
+        for ifc_rel in ifc_building_element.IsDefinedBy:
+            if ifc_rel.is_a("IfcRelDefinesByProperties"):
+                if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
+                    for (
+                        ifc_property
+                    ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
+                        if ifc_property.Name == "ThermalTransmittance":
                             ifc_value = ifc_property.NominalValue.wrappedValue
+                            u_value.setAttribute("unit", "WPerSquareMeterK")
+                            u_value.appendChild(root.createTextNode(str(ifc_value)))
+                            window_type.appendChild(u_value)
 
-                            if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
-                                "IfcWall"
-                            ):
-                                if ifc_property.Name == "ThermalTransmittance":
+        solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
+        transmittance = root.createElement("Transmittance")
+        for ifc_rel in ifc_building_element.IsDefinedBy:
+            if ifc_rel.is_a("IfcRelDefinesByType"):
+                if ifc_rel.RelatingType.is_a("IfcTypeProduct"):
+                    for ifc_property_set in ifc_rel.RelatingType.HasPropertySets:
+                        if ifc_property_set.Name == "Analytical Properties(Type)":
+                            for ifc_property in ifc_property_set.HasProperties:
+
+                                ifc_value = ifc_property.NominalValue.wrappedValue
+
+                                if ifc_property.Name == "Solar Heat Gain Coefficient":
+                                    solar_heat_gain_coeff.setAttribute(
+                                        "unit", "Fraction"
+                                    )
+                                    solar_heat_gain_coeff.appendChild(
+                                        root.createTextNode(str(ifc_value))
+                                    )
+                                    window_type.appendChild(solar_heat_gain_coeff)
+
+                                elif ifc_property.Name == "Visual Light Transmittance":
+                                    transmittance.setAttribute("unit", "Fraction")
+                                    transmittance.setAttribute("type", "Visible")
+                                    transmittance.appendChild(
+                                        root.createTextNode(str(ifc_value))
+                                    )
+                                    window_type.appendChild(transmittance)
+
+        gbxml.appendChild(window_type)
+
+    # Specify the 'Construction' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
+    # This new element is added as child to the earlier created 'gbXML' element
+    ifc_global_ids = []
+
+    for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
+        # Make sure a 'SpaceBoundary' is representing an actual element
+        if ifc_rel_space_boundary.RelatedBuildingElement is None:
+            continue
+
+        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+            "IfcWall",
+            "IfcSlab",
+            "IfcRoof",
+            "IfcCovering",
+        ]:
+
+            # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+            ifc_global_id = (
+                ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
+                    0
+                ].GlobalId
+            )
+
+            # Make use of a list to make sure no same 'Construction' elements are added twice
+            if ifc_global_id not in ifc_global_ids:
+                ifc_global_ids.append(ifc_global_id)
+
+                construction = root.createElement("Construction")
+                construction.setAttribute("id", fix_xml_cons(ifc_global_id))
+                dict_id[fix_xml_cons(ifc_global_id)] = construction
+
+                # Specify analytical properties of the 'Construction' element by iterating through IFC entities
+
+                u_value = root.createElement("U-value")
+                for (
+                    ifc_rel
+                ) in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
+                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
+                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
+                            for (
+                                ifc_property
+                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
+                                ifc_value = ifc_property.NominalValue.wrappedValue
+
+                                if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
+                                    "IfcWall"
+                                ):
+                                    if ifc_property.Name == "ThermalTransmittance":
+                                        u_value.setAttribute("unit", "WPerSquareMeterK")
+                                        u_value.appendChild(
+                                            root.createTextNode(str(ifc_value))
+                                        )
+                                        construction.appendChild(u_value)
+
+                                if ifc_property.Name == "Heat Transfer Coefficient (U)":
                                     u_value.setAttribute("unit", "WPerSquareMeterK")
                                     u_value.appendChild(
                                         root.createTextNode(str(ifc_value))
                                     )
                                     construction.appendChild(u_value)
 
-                            if ifc_property.Name == "Heat Transfer Coefficient (U)":
-                                u_value.setAttribute("unit", "WPerSquareMeterK")
-                                u_value.appendChild(root.createTextNode(str(ifc_value)))
-                                construction.appendChild(u_value)
+                absorptance = root.createElement("Absorptance")
+                for (
+                    ifc_rel
+                ) in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
+                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
+                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
+                            for (
+                                ifc_property
+                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
+                                if ifc_property.Name == "Absorptance":
+                                    ifc_value = ifc_property.NominalValue.wrappedValue
+                                    absorptance.setAttribute("unit", "Fraction")
+                                    absorptance.setAttribute("type", "ExtIR")
+                                    absorptance.appendChild(
+                                        root.createTextNode(str(ifc_value))
+                                    )
+                                    construction.appendChild(absorptance)
 
-            absorptance = root.createElement("Absorptance")
-            for ifc_rel in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
-                if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                    if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                        for (
-                            ifc_property
-                        ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                            if ifc_property.Name == "Absorptance":
-                                ifc_value = ifc_property.NominalValue.wrappedValue
-                                absorptance.setAttribute("unit", "Fraction")
-                                absorptance.setAttribute("type", "ExtIR")
-                                absorptance.appendChild(
-                                    root.createTextNode(str(ifc_value))
-                                )
-                                construction.appendChild(absorptance)
+                for (
+                    association
+                ) in ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations:
+                    if association.is_a("IfcRelAssociatesMaterial"):
+                        # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
 
-            for (
-                association
-            ) in ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations:
-                if association.is_a("IfcRelAssociatesMaterial"):
-                    # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-
-                    layer_id = root.createElement("LayerId")
-                    layer_id.setAttribute(
-                        "layerIdRef", fix_xml_layer(association.GlobalId)
-                    )
-                    construction.appendChild(layer_id)
-
-                    # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
-                    name = root.createElement("Name")
-                    if hasattr(association.RelatingMaterial, "ForLayerSet"):
-                        name.appendChild(
-                            root.createTextNode(
-                                association.RelatingMaterial.ForLayerSet.LayerSetName
-                            )
+                        layer_id = root.createElement("LayerId")
+                        layer_id.setAttribute(
+                            "layerIdRef", fix_xml_layer(association.GlobalId)
                         )
-                    construction.appendChild(name)
+                        construction.appendChild(layer_id)
 
-            gbxml.appendChild(construction)
+                        # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
+                        name = root.createElement("Name")
+                        if hasattr(association.RelatingMaterial, "ForLayerSet"):
+                            name.appendChild(
+                                root.createTextNode(
+                                    association.RelatingMaterial.ForLayerSet.LayerSetName
+                                )
+                            )
+                        construction.appendChild(name)
 
-    else:
-        continue
+                gbxml.appendChild(construction)
 
-# Specify the 'Layer' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
-# This new element is added as child to the earlier created 'gbXML' element
-ifc_building_elements = ifc_file.by_type("IfcBuildingElement")
-for ifc_building_element in ifc_building_elements:
-    if (
-        ifc_building_element.is_a("IfcWall")
-        or ifc_building_element.is_a("IfcCovering")
-        or ifc_building_element.is_a("IfcSlab")
-        or ifc_building_element.is_a("IfcRoof")
-    ):
+    # Specify the 'Layer' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
+    # This new element is added as child to the earlier created 'gbXML' element
+    for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
 
-        # Try and catch an Element that is just an Aggregate
-        if ifc_building_element.IsDecomposedBy:
-            continue
-        for association in ifc_building_element.HasAssociations:
-            if association.is_a("IfcRelAssociatesMaterial"):
-                # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+        if ifc_building_element.is_a() in [
+            "IfcWall",
+            "IfcSlab",
+            "IfcRoof",
+            "IfcCovering",
+        ]:
+
+            # Try and catch an Element that is just an Aggregate
+            if ifc_building_element.IsDecomposedBy:
+                continue
+
+            for association in ifc_building_element.HasAssociations:
+                if not association.is_a("IfcRelAssociatesMaterial"):
+                    continue
+                if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+                    continue
 
                 layer = root.createElement("Layer")
                 layer.setAttribute("id", fix_xml_layer(association.GlobalId))
-
                 dict_id[fix_xml_layer(association.GlobalId)] = layer
 
                 # Specify the 'IfcMaterialLayer' entity and iterate to each 'IfcMaterial' entity
-                if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
-                    continue
                 for (
                     ifc_material_layer
                 ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
@@ -610,142 +634,89 @@ for ifc_building_element in ifc_building_elements:
 
                 gbxml.appendChild(layer)
 
-    else:
-        continue
+    # Specify the 'Material' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
+    # This new element is added as child to the earlier created 'gbXML' element
+    ifc_material_layer_ids = []
 
-# Specify the 'Material' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
-# This new element is added as child to the earlier created 'gbXML' element
-ifc_material_layer_ids = []
+    for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
 
-for ifc_building_element in ifc_building_elements:
-    if (
-        ifc_building_element.is_a("IfcWall")
-        or ifc_building_element.is_a("IfcSlab")
-        or ifc_building_element.is_a("IfcCovering")
-        or ifc_building_element.is_a("IfcRoof")
-    ):
+        if ifc_building_element.is_a() in [
+            "IfcWall",
+            "IfcSlab",
+            "IfcRoof",
+            "IfcCovering",
+        ]:
 
-        # Try and catch an Element that is just an Aggregate
-        if ifc_building_element.IsDecomposedBy:
-            continue
-
-        for association in ifc_building_element.HasAssociations:
-            if not association.is_a("IfcRelAssociatesMaterial"):
-                continue
-            if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+            # Try and catch an Element that is just an Aggregate
+            if ifc_building_element.IsDecomposedBy:
                 continue
 
-            for (
-                ifc_material_layer
-            ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
-                ifc_material_layer_id = ifc_material_layer.Material.id()
+            for association in ifc_building_element.HasAssociations:
+                if not association.is_a("IfcRelAssociatesMaterial"):
+                    continue
+                if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+                    continue
 
-                # Make use of a list to make sure no same 'Materials' elements are added twice
-                if ifc_material_layer_id not in ifc_material_layer_ids:
-                    ifc_material_layer_ids.append(ifc_material_layer_id)
+                for (
+                    ifc_material_layer
+                ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
 
-                    material = root.createElement("Material")
-                    material.setAttribute("id", "mat_%d" % ifc_material_layer_id)
-                    dict_id["mat_%d" % ifc_material_layer_id] = material
+                    ifc_material_layer_id = ifc_material_layer.Material.id()
+                    # Make use of a list to make sure no same 'Materials' elements are added twice
+                    if ifc_material_layer_id not in ifc_material_layer_ids:
+                        ifc_material_layer_ids.append(ifc_material_layer_id)
 
-                    name = root.createElement("Name")
-                    name.appendChild(
-                        root.createTextNode(ifc_material_layer.Material.Name)
-                    )
-                    material.appendChild(name)
+                        material = root.createElement("Material")
+                        material.setAttribute("id", "mat_%d" % ifc_material_layer_id)
+                        dict_id["mat_%d" % ifc_material_layer_id] = material
 
-                    thickness = root.createElement("Thickness")
-                    thickness.setAttribute("unit", "Meters")
-                    layer_thickness = ifc_material_layer.LayerThickness
-                    thickness.appendChild(root.createTextNode((str(layer_thickness))))
-                    material.appendChild(thickness)
+                        name = root.createElement("Name")
+                        name.appendChild(
+                            root.createTextNode(ifc_material_layer.Material.Name)
+                        )
+                        material.appendChild(name)
 
-                    r_value = root.createElement("R-value")
-                    r_value.setAttribute("unit", "SquareMeterKPerW")
+                        thickness = root.createElement("Thickness")
+                        thickness.setAttribute("unit", "Meters")
+                        layer_thickness = ifc_material_layer.LayerThickness
+                        thickness.appendChild(
+                            root.createTextNode((str(layer_thickness)))
+                        )
+                        material.appendChild(thickness)
 
-                    # Analytical properties of the Material entity can be found directly
-                    if hasattr(ifc_material_layer.Material, "HasProperties"):
-                        for (
-                            ifc_material_property
-                        ) in ifc_material_layer.Material.HasProperties:
-                            if ifc_material_property.Name == "Pset_MaterialEnergy":
-                                for (
-                                    pset_material_energy
-                                ) in ifc_material_property.Properties:
-                                    if (
-                                        pset_material_energy.Name
-                                        == "ThermalConductivityTemperatureDerivative"
-                                    ):
-                                        ifc_value = (
-                                            pset_material_energy.NominalValue.wrappedValue
-                                        )
-                                        r_value.setAttribute("unit", "SquareMeterKPerW")
-                                        r_value.appendChild(
-                                            root.createTextNode(str(ifc_value))
-                                        )
-                                        material.appendChild(r_value)
+                        r_value = root.createElement("R-value")
+                        r_value.setAttribute("unit", "SquareMeterKPerW")
 
-                                        gbxml.appendChild(material)
-
-                    # Specify analytical properties of the 'Material' element by iterating through IFC entities
-                    for ifc_rel in ifc_building_element.IsDefinedBy:
-                        if ifc_rel.is_a("IfcRelDefinesByType"):
-                            if ifc_rel.RelatingType.is_a("IfcWallType"):
-                                for (
-                                    ifc_property_set
-                                ) in ifc_rel.RelatingType.HasPropertySets:
-                                    if (
-                                        ifc_property_set.Name
-                                        == "Analytical Properties(Type)"
-                                    ):
-                                        for (
-                                            ifc_property
-                                        ) in ifc_property_set.HasProperties:
-                                            if (
-                                                ifc_property.Name
-                                                == "Heat Transfer Coefficient (U)"
-                                            ):
-                                                ifc_value = (
-                                                    ifc_property.NominalValue.wrappedValue
-                                                )
-                                                r_value.appendChild(
-                                                    root.createTextNode(
-                                                        str(layer_thickness / ifc_value)
-                                                    )
-                                                )
-                                                material.appendChild(r_value)
-
-                                                gbxml.appendChild(material)
-
-                        elif ifc_rel.is_a("IfcRelDefinesByProperties"):
-                            if ifc_rel.RelatingPropertyDefinition.is_a(
-                                "IfcPropertySet"
-                            ):
-                                for (
-                                    ifc_property
-                                ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                                    if (
-                                        ifc_property.Name
-                                        == "Heat Transfer Coefficient (U)"
-                                    ):
-                                        ifc_value = (
-                                            ifc_property.NominalValue.wrappedValue
-                                        )
-                                        r_value.setAttribute("unit", "SquareMeterKPerW")
-                                        r_value.appendChild(
-                                            root.createTextNode(
-                                                str(layer_thickness / ifc_value)
+                        # Analytical properties of the Material entity can be found directly
+                        if hasattr(ifc_material_layer.Material, "HasProperties"):
+                            for (
+                                ifc_material_property
+                            ) in ifc_material_layer.Material.HasProperties:
+                                if ifc_material_property.Name == "Pset_MaterialEnergy":
+                                    for (
+                                        pset_material_energy
+                                    ) in ifc_material_property.Properties:
+                                        if (
+                                            pset_material_energy.Name
+                                            == "ThermalConductivityTemperatureDerivative"
+                                        ):
+                                            ifc_value = (
+                                                pset_material_energy.NominalValue.wrappedValue
                                             )
-                                        )
-                                        material.appendChild(r_value)
+                                            r_value.setAttribute(
+                                                "unit", "SquareMeterKPerW"
+                                            )
+                                            r_value.appendChild(
+                                                root.createTextNode(str(ifc_value))
+                                            )
+                                            material.appendChild(r_value)
 
-                                        gbxml.appendChild(material)
+                                            gbxml.appendChild(material)
 
-                        if ifc_building_element.is_a("IfcCovering"):
-                            if ifc_rel.is_a("IfcRelDefinesByProperties") and hasattr(
-                                ifc_rel, "RelatingType"
-                            ):
-                                if ifc_rel.RelatingType.is_a("IfcPropertySet"):
+                        # Specify analytical properties of the 'Material' element by iterating through IFC entities
+                        for ifc_rel in ifc_building_element.IsDefinedBy:
+                            if ifc_rel.is_a("IfcRelDefinesByType"):
+                                if ifc_rel.RelatingType.is_a("IfcWallType"):
                                     for (
                                         ifc_property_set
                                     ) in ifc_rel.RelatingType.HasPropertySets:
@@ -777,6 +748,74 @@ for ifc_building_element in ifc_building_elements:
                                                     material.appendChild(r_value)
 
                                                     gbxml.appendChild(material)
+
+                            elif ifc_rel.is_a("IfcRelDefinesByProperties"):
+                                if ifc_rel.RelatingPropertyDefinition.is_a(
+                                    "IfcPropertySet"
+                                ):
+                                    for (
+                                        ifc_property
+                                    ) in (
+                                        ifc_rel.RelatingPropertyDefinition.HasProperties
+                                    ):
+                                        if (
+                                            ifc_property.Name
+                                            == "Heat Transfer Coefficient (U)"
+                                        ):
+                                            ifc_value = (
+                                                ifc_property.NominalValue.wrappedValue
+                                            )
+                                            r_value.setAttribute(
+                                                "unit", "SquareMeterKPerW"
+                                            )
+                                            r_value.appendChild(
+                                                root.createTextNode(
+                                                    str(layer_thickness / ifc_value)
+                                                )
+                                            )
+                                            material.appendChild(r_value)
+
+                                            gbxml.appendChild(material)
+
+                            if ifc_building_element.is_a("IfcCovering"):
+                                if ifc_rel.is_a(
+                                    "IfcRelDefinesByProperties"
+                                ) and hasattr(ifc_rel, "RelatingType"):
+                                    if ifc_rel.RelatingType.is_a("IfcPropertySet"):
+                                        for (
+                                            ifc_property_set
+                                        ) in ifc_rel.RelatingType.HasPropertySets:
+                                            if (
+                                                ifc_property_set.Name
+                                                == "Analytical Properties(Type)"
+                                            ):
+                                                for (
+                                                    ifc_property
+                                                ) in ifc_property_set.HasProperties:
+                                                    if (
+                                                        ifc_property.Name
+                                                        == "Heat Transfer Coefficient (U)"
+                                                    ):
+                                                        ifc_value = (
+                                                            ifc_property.NominalValue.wrappedValue
+                                                        )
+                                                        r_value.setAttribute(
+                                                            "unit", "SquareMeterKPerW"
+                                                        )
+                                                        r_value.appendChild(
+                                                            root.createTextNode(
+                                                                str(
+                                                                    layer_thickness
+                                                                    / ifc_value
+                                                                )
+                                                            )
+                                                        )
+                                                        material.appendChild(r_value)
+
+                                                        gbxml.appendChild(material)
+
+    gbxml.appendChild(create_DocumentHistory(ifc_file, root))
+    return root
 
 
 def create_DocumentHistory(ifc_file, root):
@@ -826,9 +865,13 @@ def create_DocumentHistory(ifc_file, root):
     return document_history
 
 
-gbxml.appendChild(create_DocumentHistory(ifc_file, root))
+if __name__ == "__main__":
+    if not len(sys.argv) == 3:
+        sys.exit("Usage: " + sys.argv[0] + " input.ifc output.xml")
+    path_ifc = sys.argv[1]
+    path_xml = sys.argv[2]
+    ifc_file = ifcopenshell.open(path_ifc)
 
-# Create a new XML file and write all created elements to it
-save_path_file = sys.argv[2]
-
-root.writexml(open(save_path_file, "w"), indent="  ", addindent="  ", newl="\n")
+    # Create a new XML file and write all created elements to it
+    root = create_gbxml(ifc_file)
+    root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
