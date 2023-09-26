@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# Import necessary python libraries e.g. IfcOpenShell and MiniDom
+
 import ifcopenshell.util.placement
 import numpy as np
 import datetime
@@ -7,18 +7,37 @@ import time
 import sys
 from xml.dom import minidom
 
+# Copyright (C) 2016-2023
+# Maarten Visschers <maartenvisschers@hotmail.com>
+# Bruno Postle <bruno@postle.net>
+# Tokarzewski <bartlomiej.tokarzewski@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify it under
+# the terms of the GNU General Public License as published by the Free Software
+# Foundation, either version 3 of the License, or (at your option) any later
+# version.
+#
+# This program is distributed in the hope that it will be useful, but WITHOUT
+# ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+# FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+# details.
+#
+# You should have received a copy of the GNU General Public License along with
+# this program. If not, see <https://www.gnu.org/licenses/>.
 
 # from https://github.com/wassimj/TopologicSverchok/blob/main/nodes/Topologic/ifc_topologic.py
 def get_boundary_vertices(ifc_rel_space_boundary):
     ifc_curve = ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement
     if ifc_curve.is_a("IfcFaceSurface"):
+        # FIXME assumes Bound is IfcPolyLoop, could also be IfcEdgeLoop or IfcVertexLoop
         ifc_points = ifc_curve.Bounds[0].Bound.Polygon
+        plane_coords = [v.Coordinates for v in ifc_points]
         ifc_plane = ifc_curve.FaceSurface
     elif ifc_curve.is_a("IfcCurveBoundedPlane"):
-        ifc_points = ifc_curve.OuterBoundary.Points
+        # assumes OuterBoundary is IfcIndexedPolyCurve or IfcPolyline
+        plane_coords = ifc_curve.OuterBoundary.Points[0]
         ifc_plane = ifc_curve.BasisSurface
     plane_matrix = ifcopenshell.util.placement.get_axis2placement(ifc_plane.Position)
-    plane_coords = [v.Coordinates for v in ifc_points]
     plane_vertices = [
         np.array(v + (0, 1)) if len(v) == 2 else np.array(v + (1,))
         for v in plane_coords
@@ -37,9 +56,15 @@ def get_boundary_vertices(ifc_rel_space_boundary):
 
 def get_poly_loop(root, vertices, ifc_relating_space):
     poly_loop = root.createElement("PolyLoop")
-    new_z = ifc_relating_space.ObjectPlacement.PlacementRelTo.RelativePlacement.Location.Coordinates[
-        2
-    ]
+    if ifc_relating_space.ObjectPlacement.PlacementRelTo:
+        new_z = ifc_relating_space.ObjectPlacement.PlacementRelTo.RelativePlacement.Location.Coordinates[
+            2
+        ]
+    else:
+        new_z = 0.0
+    # gbXML PolyLoops don't have coincident start/end vertices
+    if np.allclose(vertices[0], vertices[-1]):
+        del vertices[-1]
     for v in vertices:
         x, y, z = v
         z = z + new_z
@@ -118,10 +143,11 @@ def create_gbxml(ifc_file):
     # This element is added as child to the earlier created 'gbXML' element
     # Site must have the Longitude attribute
 
-    ifc_sites = ifc_file.by_type("IfcSite")
-    ifc_sites = [ifc_site for ifc_site in ifc_sites if ifc_site.RefLongitude != None]
-
-    for ifc_site in ifc_sites:
+    for ifc_site in ifc_file.by_type("IfcSite"):
+        if ifc_site.RefLongitude == None:
+            ifc_site.RefLatitude = [53, 23, 0]
+            ifc_site.RefLongitude = [1, 28, 0]
+            ifc_site.RefElevation = 75.0
         campus = root.createElement("Campus")
         campus.setAttribute("id", fix_xml_cmps(ifc_site.GlobalId))
         gbxml.appendChild(campus)
@@ -260,14 +286,12 @@ def create_gbxml(ifc_file):
                     vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
                     # Create 'SpaceBoundary' elements for the following building elements
-                    if (
-                        ifc_rel_space_boundary.RelatedBuildingElement.is_a(
-                            "IfcCovering"
-                        )
-                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
-                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
-                        or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
-                    ):
+                    if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+                        "IfcWall",
+                        "IfcSlab",
+                        "IfcRoof",
+                        "IfcCovering",
+                    ]:
 
                         space_boundary = root.createElement("SpaceBoundary")
                         space_boundary.setAttribute("isSecondLevelBoundary", "true")
@@ -302,12 +326,12 @@ def create_gbxml(ifc_file):
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
         # Specify each 'Surface' element and set 'SurfaceType' attributes
-        if (
-            ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering")
-            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab")
-            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall")
-            or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof")
-        ):
+        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+            "IfcWall",
+            "IfcSlab",
+            "IfcRoof",
+            "IfcCovering",
+        ]:
 
             surface = root.createElement("Surface")
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
@@ -331,12 +355,15 @@ def create_gbxml(ifc_file):
             if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall"):
                 if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL":
                     surface.setAttribute("surfaceType", "ExteriorWall")
+                    surface.setAttribute("exposedToSun", "true")
                 elif (
                     ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_FIRE"
                 ):
                     surface.setAttribute("surfaceType", "ExteriorWall")
+                    surface.setAttribute("exposedToSun", "false")
                 else:
                     surface.setAttribute("surfaceType", "InteriorWall")
+                    surface.setAttribute("exposedToSun", "false")
 
             # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
             surface.setAttribute(
@@ -421,7 +448,7 @@ def create_gbxml(ifc_file):
             )
             opening.appendChild(cad_object_id)
 
-            # FIXME this only works if the wall is listed before its windows
+            # FIXME this only works if the wall is listed immediately before its windows
             surface.appendChild(opening)
 
         campus.appendChild(surface)
@@ -865,13 +892,19 @@ def create_DocumentHistory(ifc_file, root):
     return document_history
 
 
+# import blenderbim.tool
+# ifc_file = blenderbim.tool.Ifc.get()
+# root = create_gbxml(ifc_file)
+# root.writexml(open("temp.xml", "w"), indent="  ", addindent="  ", newl="\n")
+
 if __name__ == "__main__":
     if not len(sys.argv) == 3:
-        sys.exit("Usage: " + sys.argv[0] + " input.ifc output.xml")
-    path_ifc = sys.argv[1]
-    path_xml = sys.argv[2]
-    ifc_file = ifcopenshell.open(path_ifc)
+        print("Usage: " + sys.argv[0] + " input.ifc output.xml")
+    else:
+        path_ifc = sys.argv[1]
+        path_xml = sys.argv[2]
+        ifc_file = ifcopenshell.open(path_ifc)
 
-    # Create a new XML file and write all created elements to it
-    root = create_gbxml(ifc_file)
-    root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
+        # Create a new XML file and write all created elements to it
+        root = create_gbxml(ifc_file)
+        root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
