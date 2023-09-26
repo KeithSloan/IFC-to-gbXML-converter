@@ -552,6 +552,7 @@ def create_gbxml(ifc_file):
 
                 # Specify analytical properties of the 'Construction' element by iterating through IFC entities
 
+                # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
                 u_value = root.createElement("U-value")
                 for (
                     ifc_rel
@@ -573,7 +574,9 @@ def create_gbxml(ifc_file):
                                         )
                                         construction.appendChild(u_value)
 
-                                if ifc_property.Name == "Heat Transfer Coefficient (U)":
+                                elif (
+                                    ifc_property.Name == "Heat Transfer Coefficient (U)"
+                                ):
                                     u_value.setAttribute("unit", "WPerSquareMeterK")
                                     u_value.appendChild(
                                         root.createTextNode(str(ifc_value))
@@ -640,6 +643,7 @@ def create_gbxml(ifc_file):
             for association in ifc_building_element.HasAssociations:
                 if not association.is_a("IfcRelAssociatesMaterial"):
                     continue
+                # FIXME Assumes a Material Layer Set has a Usage
                 if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
                     continue
 
@@ -713,6 +717,9 @@ def create_gbxml(ifc_file):
 
                         r_value = root.createElement("R-value")
                         r_value.setAttribute("unit", "SquareMeterKPerW")
+                        # NOTE silently sets a default r-value of 0.01
+                        r_value.appendChild(root.createTextNode("0.01"))
+                        material.appendChild(r_value)
 
                         # Analytical properties of the Material entity can be found directly
                         if hasattr(ifc_material_layer.Material, "HasProperties"):
@@ -730,15 +737,7 @@ def create_gbxml(ifc_file):
                                             ifc_value = (
                                                 pset_material_energy.NominalValue.wrappedValue
                                             )
-                                            r_value.setAttribute(
-                                                "unit", "SquareMeterKPerW"
-                                            )
-                                            r_value.appendChild(
-                                                root.createTextNode(str(ifc_value))
-                                            )
-                                            material.appendChild(r_value)
-
-                                            gbxml.appendChild(material)
+                                            r_value.firstChild.data = str(ifc_value)
 
                         # Specify analytical properties of the 'Material' element by iterating through IFC entities
                         for ifc_rel in ifc_building_element.IsDefinedBy:
@@ -761,20 +760,9 @@ def create_gbxml(ifc_file):
                                                     ifc_value = (
                                                         ifc_property.NominalValue.wrappedValue
                                                     )
-                                                    r_value.setAttribute(
-                                                        "unit", "SquareMeterKPerW"
+                                                    r_value.firstChild.data = str(
+                                                        layer_thickness / ifc_value
                                                     )
-                                                    r_value.appendChild(
-                                                        root.createTextNode(
-                                                            str(
-                                                                layer_thickness
-                                                                / ifc_value
-                                                            )
-                                                        )
-                                                    )
-                                                    material.appendChild(r_value)
-
-                                                    gbxml.appendChild(material)
 
                             elif ifc_rel.is_a("IfcRelDefinesByProperties"):
                                 if ifc_rel.RelatingPropertyDefinition.is_a(
@@ -792,17 +780,9 @@ def create_gbxml(ifc_file):
                                             ifc_value = (
                                                 ifc_property.NominalValue.wrappedValue
                                             )
-                                            r_value.setAttribute(
-                                                "unit", "SquareMeterKPerW"
+                                            r_value.firstChild.data = str(
+                                                layer_thickness / ifc_value
                                             )
-                                            r_value.appendChild(
-                                                root.createTextNode(
-                                                    str(layer_thickness / ifc_value)
-                                                )
-                                            )
-                                            material.appendChild(r_value)
-
-                                            gbxml.appendChild(material)
 
                             if ifc_building_element.is_a("IfcCovering"):
                                 if ifc_rel.is_a(
@@ -826,20 +806,11 @@ def create_gbxml(ifc_file):
                                                         ifc_value = (
                                                             ifc_property.NominalValue.wrappedValue
                                                         )
-                                                        r_value.setAttribute(
-                                                            "unit", "SquareMeterKPerW"
+                                                        r_value.firstChild.data = str(
+                                                            layer_thickness / ifc_value
                                                         )
-                                                        r_value.appendChild(
-                                                            root.createTextNode(
-                                                                str(
-                                                                    layer_thickness
-                                                                    / ifc_value
-                                                                )
-                                                            )
-                                                        )
-                                                        material.appendChild(r_value)
 
-                                                        gbxml.appendChild(material)
+                            gbxml.appendChild(material)
 
     gbxml.appendChild(create_DocumentHistory(ifc_file, root))
     return root
