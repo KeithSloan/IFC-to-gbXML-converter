@@ -35,7 +35,7 @@ def get_boundary_vertices(ifc_rel_space_boundary):
         ifc_plane = ifc_curve.FaceSurface
     elif ifc_curve.is_a("IfcCurveBoundedPlane"):
         # assumes OuterBoundary is IfcIndexedPolyCurve or IfcPolyline
-        plane_coords = ifc_curve.OuterBoundary.Points[0]
+        plane_coords = [point.Coordinates for point in ifc_curve.OuterBoundary.Points]
         ifc_plane = ifc_curve.BasisSurface
     plane_matrix = ifcopenshell.util.placement.get_axis2placement(ifc_plane.Position)
     plane_vertices = [
@@ -250,25 +250,21 @@ def create_gbxml(ifc_file):
                 )
 
                 area = root.createElement("Area")
+                # area.setAttribute("unit", "MetreSquare")
+                area.appendChild(root.createTextNode("1.0"))
                 volume = root.createElement("Volume")
+                # volume.setAttribute("unit", "MetreCube)
+                volume.appendChild(root.createTextNode("1.0"))
 
-                for ifc_rel in ifc_space.IsDefinedBy:
-                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                            for (
-                                ifc_property
-                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                                ifc_value = ifc_property.NominalValue.wrappedValue
-                                if ifc_property.Name == "Area":
-                                    area.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    space.appendChild(area)
-                                if ifc_property.Name == "Volume":
-                                    volume.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    space.appendChild(volume)
+                for ifc_pset in ifcopenshell.util.element.get_psets(
+                    ifc_space, psets_only=True
+                ):
+                    if hasattr(ifc_pset, "Area"):
+                        area.firstChild.data = str(ifc_pset["Area"])
+                        space.appendChild(area)
+                    if hasattr(ifc_pset, "Volume"):
+                        volume.firstChild.data = str(ifc_pset["Volume"])
+                        space.appendChild(volume)
 
                 name = root.createElement("Name")
                 name.appendChild(root.createTextNode("Space_%d" % space_id))
@@ -320,6 +316,8 @@ def create_gbxml(ifc_file):
         if ifc_rel_space_boundary.RelatedBuildingElement == None:
             continue
         if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
+            continue
+        if ifc_rel_space_boundary.RelatingSpace == None:
             continue
 
         # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
@@ -477,45 +475,34 @@ def create_gbxml(ifc_file):
         # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
         u_value = root.createElement("U-value")
-        for ifc_rel in ifc_building_element.IsDefinedBy:
-            if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                    for (
-                        ifc_property
-                    ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                        if ifc_property.Name == "ThermalTransmittance":
-                            ifc_value = ifc_property.NominalValue.wrappedValue
-                            u_value.setAttribute("unit", "WPerSquareMeterK")
-                            u_value.appendChild(root.createTextNode(str(ifc_value)))
-                            window_type.appendChild(u_value)
+        u_value.setAttribute("unit", "WPerSquareMeterK")
+        u_value.appendChild(root.createTextNode("10.0"))
 
         solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
+        solar_heat_gain_coeff.setAttribute("unit", "Fraction")
+        solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
+
         transmittance = root.createElement("Transmittance")
-        for ifc_rel in ifc_building_element.IsDefinedBy:
-            if ifc_rel.is_a("IfcRelDefinesByType"):
-                if ifc_rel.RelatingType.is_a("IfcTypeProduct"):
-                    for ifc_property_set in ifc_rel.RelatingType.HasPropertySets:
-                        if ifc_property_set.Name == "Analytical Properties(Type)":
-                            for ifc_property in ifc_property_set.HasProperties:
+        transmittance.setAttribute("unit", "Fraction")
+        transmittance.setAttribute("type", "Visible")
+        transmittance.appendChild(root.createTextNode("1.0"))
 
-                                ifc_value = ifc_property.NominalValue.wrappedValue
-
-                                if ifc_property.Name == "Solar Heat Gain Coefficient":
-                                    solar_heat_gain_coeff.setAttribute(
-                                        "unit", "Fraction"
-                                    )
-                                    solar_heat_gain_coeff.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    window_type.appendChild(solar_heat_gain_coeff)
-
-                                elif ifc_property.Name == "Visual Light Transmittance":
-                                    transmittance.setAttribute("unit", "Fraction")
-                                    transmittance.setAttribute("type", "Visible")
-                                    transmittance.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    window_type.appendChild(transmittance)
+        for ifc_pset in ifcopenshell.util.element.get_psets(
+            ifc_building_element, psets_only=True
+        ):
+            if hasattr(ifc_pset, "ThermalTransmittance"):
+                u_value.firstChild.data = str(ifc_pset["ThermalTransmittance"])
+                window_type.appendChild(u_value)
+            if hasattr(ifc_pset, "Solar Heat Gain Coefficient"):
+                solar_heat_gain_coeff.firstChild.data = str(
+                    ifc_pset["Solar Heat Gain Coefficient"]
+                )
+                window_type.appendChild(solar_heat_gain_coeff)
+            if hasattr(ifc_pset, "Visual Light Transmittance"):
+                transmittance.firstChild.data = str(
+                    ifc_pset["Visual Light Transmittance"]
+                )
+                window_type.appendChild(transmittance)
 
         gbxml.appendChild(window_type)
 
@@ -525,10 +512,11 @@ def create_gbxml(ifc_file):
 
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
         # Make sure a 'SpaceBoundary' is representing an actual element
-        if ifc_rel_space_boundary.RelatedBuildingElement is None:
+        ifc_building_element = ifc_rel_space_boundary.RelatedBuildingElement
+        if ifc_building_element is None:
             continue
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+        if ifc_building_element.is_a() in [
             "IfcWall",
             "IfcSlab",
             "IfcRoof",
@@ -536,11 +524,7 @@ def create_gbxml(ifc_file):
         ]:
 
             # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-            ifc_global_id = (
-                ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
-                    0
-                ].GlobalId
-            )
+            ifc_global_id = ifc_building_element.HasAssociations[0].GlobalId
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
             if ifc_global_id not in ifc_global_ids:
@@ -554,56 +538,32 @@ def create_gbxml(ifc_file):
 
                 # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
                 u_value = root.createElement("U-value")
-                for (
-                    ifc_rel
-                ) in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
-                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                            for (
-                                ifc_property
-                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                                ifc_value = ifc_property.NominalValue.wrappedValue
-
-                                if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
-                                    "IfcWall"
-                                ):
-                                    if ifc_property.Name == "ThermalTransmittance":
-                                        u_value.setAttribute("unit", "WPerSquareMeterK")
-                                        u_value.appendChild(
-                                            root.createTextNode(str(ifc_value))
-                                        )
-                                        construction.appendChild(u_value)
-
-                                elif (
-                                    ifc_property.Name == "Heat Transfer Coefficient (U)"
-                                ):
-                                    u_value.setAttribute("unit", "WPerSquareMeterK")
-                                    u_value.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    construction.appendChild(u_value)
+                u_value.setAttribute("unit", "WPerSquareMeterK")
+                u_value.appendChild(root.createTextNode("10.0"))
 
                 absorptance = root.createElement("Absorptance")
-                for (
-                    ifc_rel
-                ) in ifc_rel_space_boundary.RelatedBuildingElement.IsDefinedBy:
-                    if ifc_rel.is_a("IfcRelDefinesByProperties"):
-                        if ifc_rel.RelatingPropertyDefinition.is_a("IfcPropertySet"):
-                            for (
-                                ifc_property
-                            ) in ifc_rel.RelatingPropertyDefinition.HasProperties:
-                                if ifc_property.Name == "Absorptance":
-                                    ifc_value = ifc_property.NominalValue.wrappedValue
-                                    absorptance.setAttribute("unit", "Fraction")
-                                    absorptance.setAttribute("type", "ExtIR")
-                                    absorptance.appendChild(
-                                        root.createTextNode(str(ifc_value))
-                                    )
-                                    construction.appendChild(absorptance)
+                absorptance.setAttribute("unit", "Fraction")
+                absorptance.setAttribute("type", "ExtIR")
+                absorptance.appendChild(root.createTextNode("1.0"))
 
-                for (
-                    association
-                ) in ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations:
+                for ifc_pset in ifcopenshell.util.element.get_psets(
+                    ifc_building_element, psets_only=True
+                ):
+                    # IfcWall has ThermalTransmittance
+                    if hasattr(ifc_pset, "ThermalTransmittance"):
+                        u_value.firstChild.data = str(ifc_pset["ThermalTransmittance"])
+                        construction.appendChild(u_value)
+                    # everything else? has Heat Transfer Coefficient (U)
+                    if hasattr(ifc_pset, "Heat Transfer Coefficient (U)"):
+                        u_value.firstChild.data = str(
+                            ifc_pset["Heat Transfer Coefficient (U)"]
+                        )
+                        construction.appendChild(u_value)
+                    if hasattr(ifc_pset, "Absorptance"):
+                        absorptance.firstChild.data = str(ifc_pset["Absorptance"])
+                        construction.appendChild(absorptance)
+
+                for association in ifc_building_element.HasAssociations:
                     if association.is_a("IfcRelAssociatesMaterial"):
                         # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
 
@@ -722,93 +682,45 @@ def create_gbxml(ifc_file):
                         material.appendChild(r_value)
 
                         # Analytical properties of the Material entity can be found directly
-                        if hasattr(ifc_material_layer.Material, "HasProperties"):
-                            for (
-                                ifc_material_property
-                            ) in ifc_material_layer.Material.HasProperties:
-                                if ifc_material_property.Name == "Pset_MaterialEnergy":
-                                    for (
-                                        pset_material_energy
-                                    ) in ifc_material_property.Properties:
-                                        if (
-                                            pset_material_energy.Name
-                                            == "ThermalConductivityTemperatureDerivative"
-                                        ):
-                                            ifc_value = (
-                                                pset_material_energy.NominalValue.wrappedValue
-                                            )
-                                            r_value.firstChild.data = str(ifc_value)
+                        for ifc_pset in ifcopenshell.util.element.get_psets(
+                            ifc_material_layer, psets_only=True
+                        ):
+                            if hasattr(
+                                ifc_pset, "ThermalConductivityTemperatureDerivative"
+                            ):
+                                r_value.firstChild.data = str(
+                                    ifc_pset["ThermalConductivityTemperatureDerivative"]
+                                )
+                            if hasattr(ifc_pset, "Heat Transfer Coefficient (U)"):
+                                ifc_value = ifc_pset["Heat Transfer Coefficient (U)"]
+                                r_value.firstChild.data = str(
+                                    layer_thickness / ifc_value
+                                )
 
-                        # Specify analytical properties of the 'Material' element by iterating through IFC entities
+                        # ..or look at Type
                         for ifc_rel in ifc_building_element.IsDefinedBy:
                             if ifc_rel.is_a("IfcRelDefinesByType"):
-                                if ifc_rel.RelatingType.is_a("IfcWallType"):
-                                    for (
-                                        ifc_property_set
-                                    ) in ifc_rel.RelatingType.HasPropertySets:
-                                        if (
-                                            ifc_property_set.Name
-                                            == "Analytical Properties(Type)"
-                                        ):
-                                            for (
-                                                ifc_property
-                                            ) in ifc_property_set.HasProperties:
-                                                if (
-                                                    ifc_property.Name
-                                                    == "Heat Transfer Coefficient (U)"
-                                                ):
-                                                    ifc_value = (
-                                                        ifc_property.NominalValue.wrappedValue
-                                                    )
-                                                    r_value.firstChild.data = str(
-                                                        layer_thickness / ifc_value
-                                                    )
-
-                            elif ifc_rel.is_a("IfcRelDefinesByProperties"):
-                                if ifc_rel.RelatingPropertyDefinition.is_a(
-                                    "IfcPropertySet"
+                                for ifc_pset in ifcopenshell.util.element.get_psets(
+                                    ifc_rel.RelatingType, psets_only=True
                                 ):
-                                    for (
-                                        ifc_property
-                                    ) in (
-                                        ifc_rel.RelatingPropertyDefinition.HasProperties
+                                    if hasattr(
+                                        ifc_pset,
+                                        "ThermalConductivityTemperatureDerivative",
                                     ):
-                                        if (
-                                            ifc_property.Name
-                                            == "Heat Transfer Coefficient (U)"
-                                        ):
-                                            ifc_value = (
-                                                ifc_property.NominalValue.wrappedValue
-                                            )
-                                            r_value.firstChild.data = str(
-                                                layer_thickness / ifc_value
-                                            )
-
-                            if ifc_building_element.is_a("IfcCovering"):
-                                if ifc_rel.is_a(
-                                    "IfcRelDefinesByProperties"
-                                ) and hasattr(ifc_rel, "RelatingType"):
-                                    if ifc_rel.RelatingType.is_a("IfcPropertySet"):
-                                        for (
-                                            ifc_property_set
-                                        ) in ifc_rel.RelatingType.HasPropertySets:
-                                            if (
-                                                ifc_property_set.Name
-                                                == "Analytical Properties(Type)"
-                                            ):
-                                                for (
-                                                    ifc_property
-                                                ) in ifc_property_set.HasProperties:
-                                                    if (
-                                                        ifc_property.Name
-                                                        == "Heat Transfer Coefficient (U)"
-                                                    ):
-                                                        ifc_value = (
-                                                            ifc_property.NominalValue.wrappedValue
-                                                        )
-                                                        r_value.firstChild.data = str(
-                                                            layer_thickness / ifc_value
-                                                        )
+                                        r_value.firstChild.data = str(
+                                            ifc_pset[
+                                                "ThermalConductivityTemperatureDerivative"
+                                            ]
+                                        )
+                                    if hasattr(
+                                        ifc_pset, "Heat Transfer Coefficient (U)"
+                                    ):
+                                        ifc_value = ifc_pset[
+                                            "Heat Transfer Coefficient (U)"
+                                        ]
+                                        r_value.firstChild.data = str(
+                                            layer_thickness / ifc_value
+                                        )
 
                             gbxml.appendChild(material)
 
