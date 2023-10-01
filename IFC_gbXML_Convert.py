@@ -35,7 +35,12 @@ def get_boundary_vertices(ifc_rel_space_boundary):
         ifc_plane = ifc_curve.FaceSurface
     elif ifc_curve.is_a("IfcCurveBoundedPlane"):
         # assumes OuterBoundary is IfcIndexedPolyCurve or IfcPolyline
-        plane_coords = [point.Coordinates for point in ifc_curve.OuterBoundary.Points]
+        if hasattr(ifc_curve.OuterBoundary.Points[0], "Coordinates"):
+            plane_coords = [
+                point.Coordinates for point in ifc_curve.OuterBoundary.Points
+            ]
+        else:
+            plane_coords = ifc_curve.OuterBoundary.Points[0]
         ifc_plane = ifc_curve.BasisSurface
     plane_matrix = ifcopenshell.util.placement.get_axis2placement(ifc_plane.Position)
     plane_vertices = [
