@@ -86,6 +86,9 @@ def get_poly_loop(root, vertices, ifc_relating_space):
     return poly_loop
 
 
+# valid GUID chars: ^[0123][0-9a-zA-Z_$]{21}$
+# valid XML id chars: ^[a-zA-Z_][a-zA-Z0-9_.-]$
+
 # Align the gbXML input according to the predefined official gbXML schema
 def remove_unnecessary_characters(element):
     char_to_replace = {"$": "", ":": "", " ": "", "(": "", ")": ""}
@@ -95,35 +98,36 @@ def remove_unnecessary_characters(element):
 
 
 def fix_xml_cmps(element):
-    return "campus" + remove_unnecessary_characters(element)
+    return "campus_" + element.replace("$", "-")
 
 
 def fix_xml_bldng(element):
-    return "building" + remove_unnecessary_characters(element)
+    return "building_" + element.replace("$", "-")
 
 
 def fix_xml_stry(element):
-    return "storey" + remove_unnecessary_characters(element)
+    return "buildingstorey_" + element.replace("$", "-")
 
 
 def fix_xml_spc(element):
-    return "space" + remove_unnecessary_characters(element)
+    return "space_" + element.replace("$", "-")
 
 
 def fix_xml_id(element):
-    return "id" + remove_unnecessary_characters(element)
+    return "id_" + element.replace("$", "-")
 
 
+# Only fix_xml_name() is used for non-guid data
 def fix_xml_name(element):
-    return "object" + remove_unnecessary_characters(element)
+    return "object_" + remove_unnecessary_characters(element)
 
 
 def fix_xml_cons(element):
-    return "construct" + remove_unnecessary_characters(element)
+    return "construction_" + element.replace("$", "-")
 
 
 def fix_xml_layer(element):
-    return "lyr" + remove_unnecessary_characters(element)
+    return "layer_" + element.replace("$", "-")
 
 
 def create_gbxml(ifc_file):
@@ -218,6 +222,7 @@ def create_gbxml(ifc_file):
             # Specify the 'BuildingStorey' element of the gbXML schema; making use of IFC entity 'IfcBuildingStorey'
             # This new element is added as child to the earlier created 'Building' element
             # FIXME assigns all Storeys to all Buildings
+            # FIXME use Storey Name for Name
             storey_id = 1
             for ifc_building_storey in ifc_file.by_type("IfcBuildingStorey"):
                 building_storey = root.createElement("BuildingStorey")
@@ -235,6 +240,7 @@ def create_gbxml(ifc_file):
 
                 level = root.createElement("Level")
                 level.appendChild(
+                    # FIXME use placement if no Elevation
                     root.createTextNode(str(ifc_building_storey.Elevation))
                 )
                 building_storey.appendChild(level)
@@ -409,9 +415,10 @@ def create_gbxml(ifc_file):
             )
             surface.appendChild(cad_object_id)
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a(
-            "IfcWindow"
-        ) or ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
+        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+            "IfcWindow",
+            "IfcDoor",
+        ]:
 
             opening = root.createElement("Opening")
 
@@ -505,6 +512,7 @@ def create_gbxml(ifc_file):
                     ifc_pset["Solar Heat Gain Coefficient"]
                 )
                 window_type.appendChild(solar_heat_gain_coeff)
+            # should be GlazingAreaFraction ??
             if hasattr(ifc_pset, "Visual Light Transmittance"):
                 transmittance.firstChild.data = str(
                     ifc_pset["Visual Light Transmittance"]
