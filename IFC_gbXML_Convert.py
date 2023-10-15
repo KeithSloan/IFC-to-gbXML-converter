@@ -197,6 +197,11 @@ def create_gbxml(ifc_file):
                 )
             )
             location.appendChild(name)
+        # FIXME silently adds a post code if none in IFC file
+        if not ifc_file.by_type("IfcPostalAddress"):
+            zipcode = root.createElement("ZipcodeOrPostalCode")
+            zipcode.appendChild(root.createTextNode("S1 2GH"))
+            location.appendChild(zipcode)
 
         # Specify the 'Building' element of the gbXML schema; making use of IFC entity 'IfcBuilding'
         # This new element is added as child to the earlier created 'Campus' element
@@ -322,7 +327,6 @@ def create_gbxml(ifc_file):
 
     # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'Campus' element
-    opening_id = 1
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
 
         # Make sure a 'SpaceBoundary' is representing an actual element
@@ -415,12 +419,29 @@ def create_gbxml(ifc_file):
             )
             surface.appendChild(cad_object_id)
 
+            campus.appendChild(surface)
+
+    opening_id = 1
+    for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
+
+        # Make sure a 'SpaceBoundary' is representing an actual element
+        if ifc_rel_space_boundary.RelatedBuildingElement == None:
+            continue
+        if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
+            continue
+        if ifc_rel_space_boundary.RelatingSpace == None:
+            continue
+
+        # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
+        vertices = get_boundary_vertices(ifc_rel_space_boundary)
+
         if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
             "IfcWindow",
             "IfcDoor",
         ]:
 
             opening = root.createElement("Opening")
+            dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = opening
 
             # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
             opening.setAttribute(
@@ -460,10 +481,11 @@ def create_gbxml(ifc_file):
             )
             opening.appendChild(cad_object_id)
 
-            # FIXME this only works if the wall is listed immediately before its windows
-            surface.appendChild(opening)
-
-        campus.appendChild(surface)
+            if fix_xml_id(ifc_rel_space_boundary.ParentBoundary.GlobalId) in dict_id:
+                surface = dict_id[
+                    fix_xml_id(ifc_rel_space_boundary.ParentBoundary.GlobalId)
+                ]
+                surface.appendChild(opening)
 
     # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
     # This new element is added as child to the earlier created 'gbXML' element
@@ -769,12 +791,19 @@ def create_DocumentHistory(ifc_file, root):
 
         document_history.appendChild(program_info)
 
+    if not ifc_file.by_type("IfcApplication"):
+        program_info = root.createElement("ProgramInfo")
+        program_info.setAttribute("id", "IFC_gbXML_Convert")
+        document_history.appendChild(program_info)
+
     for ifc_person in ifc_file.by_type("IfcPerson"):
 
         created_by = root.createElement("CreatedBy")
         created_by.setAttribute("personId", ifc_person.GivenName)
         for ifc_application in ifc_file.by_type("IfcApplication"):
             created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
+        if not ifc_file.by_type("IfcApplication"):
+            created_by.setAttribute("programId", "IFC_gbXML_Convert")
         today = datetime.date.today()
         created_by.setAttribute(
             "date", today.strftime("%Y-%m-%dT") + time.strftime("%H:%M:%S")
