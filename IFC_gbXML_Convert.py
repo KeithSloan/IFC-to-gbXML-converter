@@ -7,6 +7,8 @@ import time
 import sys
 from xml.dom import minidom
 
+get_pset = ifcopenshell.util.element.get_pset
+
 # Copyright (C) 2016-2023
 # Maarten Visschers <maartenvisschers@hotmail.com>
 # Bruno Postle <bruno@postle.net>
@@ -138,6 +140,7 @@ def create_gbxml(ifc_file):
     gbxml = root.createElement("gbXML")
     root.appendChild(gbxml)
 
+    # FIXME support non-SI units
     # Create attributes for the 'gbXML' element
     gbxml.setAttribute("xmlns", "http://www.gbxml.org/schema")
     gbxml.setAttribute("temperatureUnit", "C")
@@ -564,6 +567,7 @@ def create_gbxml(ifc_file):
             ifc_global_id = ifc_building_element.HasAssociations[0].GlobalId
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
+            # FIXME use a set
             if ifc_global_id not in ifc_global_ids:
                 ifc_global_ids.append(ifc_global_id)
 
@@ -576,6 +580,7 @@ def create_gbxml(ifc_file):
                 # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
                 u_value = root.createElement("U-value")
                 u_value.setAttribute("unit", "WPerSquareMeterK")
+                # FIXME silently gives every construction a U-value even if it is later defined properly with Layers
                 u_value.appendChild(root.createTextNode("10.0"))
 
                 absorptance = root.createElement("Absorptance")
@@ -622,8 +627,8 @@ def create_gbxml(ifc_file):
 
                 gbxml.appendChild(construction)
 
-    # Specify the 'Layer' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
-    # This new element is added as child to the earlier created 'gbXML' element
+    # NOTE the 'Layer' element of the gbXML schema is not a layer, it is a
+    # collection of layers, ie. a layer set
     for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
 
         if ifc_building_element.is_a() in [
@@ -640,7 +645,11 @@ def create_gbxml(ifc_file):
             for association in ifc_building_element.HasAssociations:
                 if not association.is_a("IfcRelAssociatesMaterial"):
                     continue
-                # FIXME Assumes a Material Layer Set has a Usage
+                # FIXME Assumes the IFC element has a Usage
+                # FIXME there is a Usage for every instance, so we get a
+                # 'Layer' element for every wall, slab and roof, but we don't
+                # use Usage attributes. Better to use the layer set for the
+                # type (or instance)
                 if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
                     continue
 
@@ -654,16 +663,16 @@ def create_gbxml(ifc_file):
                 ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
                     material_id = root.createElement("MaterialId")
                     material_id.setAttribute(
-                        "materialIdRef", "mat_%d" % ifc_material_layer.Material.id()
+                        "materialIdRef", "mat_%d" % ifc_material_layer.id()
                     )
                     layer.appendChild(material_id)
 
-                    dict_id["mat_%d" % ifc_material_layer.Material.id()] = layer
+                    dict_id["mat_%d" % ifc_material_layer.id()] = layer
 
                 gbxml.appendChild(layer)
 
-    # Specify the 'Material' element of the gbXML schema; making use of IFC entity 'IfcBuildingElement'
-    # This new element is added as child to the earlier created 'gbXML' element
+    # NOTE 'Material' element of the gbXML schema is *not* a material, it is a
+    # material & thickness combo, ie. a material layer
     ifc_material_layer_ids = []
 
     for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
@@ -682,6 +691,7 @@ def create_gbxml(ifc_file):
             for association in ifc_building_element.HasAssociations:
                 if not association.is_a("IfcRelAssociatesMaterial"):
                     continue
+                # FIXME Assumes the IFC element has a Usage
                 if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
                     continue
 
@@ -689,8 +699,10 @@ def create_gbxml(ifc_file):
                     ifc_material_layer
                 ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
 
-                    ifc_material_layer_id = ifc_material_layer.Material.id()
+                    ifc_material = ifc_material_layer.Material
+                    ifc_material_layer_id = ifc_material_layer.id()
                     # Make use of a list to make sure no same 'Materials' elements are added twice
+                    # FIXME use a set
                     if ifc_material_layer_id not in ifc_material_layer_ids:
                         ifc_material_layer_ids.append(ifc_material_layer_id)
 
@@ -699,12 +711,11 @@ def create_gbxml(ifc_file):
                         dict_id["mat_%d" % ifc_material_layer_id] = material
 
                         name = root.createElement("Name")
-                        name.appendChild(
-                            root.createTextNode(ifc_material_layer.Material.Name)
-                        )
+                        name.appendChild(root.createTextNode(ifc_material.Name))
                         material.appendChild(name)
 
                         thickness = root.createElement("Thickness")
+                        # FIXME SI units
                         thickness.setAttribute("unit", "Meters")
                         layer_thickness = ifc_material_layer.LayerThickness
                         thickness.appendChild(
@@ -713,53 +724,41 @@ def create_gbxml(ifc_file):
                         material.appendChild(thickness)
 
                         r_value = root.createElement("R-value")
+                        # FIXME SI units
                         r_value.setAttribute("unit", "SquareMeterKPerW")
-                        # NOTE silently sets a default r-value of 0.01
+                        # NOTE silently sets a default r-value
                         r_value.appendChild(root.createTextNode("0.01"))
                         material.appendChild(r_value)
 
-                        # Analytical properties of the Material entity can be found directly
-                        for ifc_pset in ifcopenshell.util.element.get_psets(
-                            ifc_material_layer, psets_only=True
-                        ):
-                            if hasattr(
-                                ifc_pset, "ThermalConductivityTemperatureDerivative"
-                            ):
-                                r_value.firstChild.data = str(
-                                    ifc_pset["ThermalConductivityTemperatureDerivative"]
-                                )
-                            if hasattr(ifc_pset, "Heat Transfer Coefficient (U)"):
-                                ifc_value = ifc_pset["Heat Transfer Coefficient (U)"]
-                                r_value.firstChild.data = str(
-                                    layer_thickness / ifc_value
-                                )
+                        pset_r_value = get_pset(
+                            ifc_material,
+                            "Pset_MaterialEnergy",
+                            prop="ThermalConductivityTemperatureDerivative",
+                        )
+                        if pset_r_value:
+                            r_value.firstChild.data = str(pset_r_value)
 
-                        # ..or look at Type
-                        for ifc_rel in ifc_building_element.IsDefinedBy:
-                            if ifc_rel.is_a("IfcRelDefinesByType"):
-                                for ifc_pset in ifcopenshell.util.element.get_psets(
-                                    ifc_rel.RelatingType, psets_only=True
-                                ):
-                                    if hasattr(
-                                        ifc_pset,
-                                        "ThermalConductivityTemperatureDerivative",
-                                    ):
-                                        r_value.firstChild.data = str(
-                                            ifc_pset[
-                                                "ThermalConductivityTemperatureDerivative"
-                                            ]
-                                        )
-                                    if hasattr(
-                                        ifc_pset, "Heat Transfer Coefficient (U)"
-                                    ):
-                                        ifc_value = ifc_pset[
-                                            "Heat Transfer Coefficient (U)"
-                                        ]
-                                        r_value.firstChild.data = str(
-                                            layer_thickness / ifc_value
-                                        )
+                        # IFC2X3 "Analytical Properties(Type)"
+                        pset_r_value = get_pset(
+                            ifc_material,
+                            "Analytical Properties(Type)",
+                            prop="Thermal Resistance (R)",
+                        )
+                        if pset_r_value:
+                            r_value.firstChild.data = str(pset_r_value)
 
-                            gbxml.appendChild(material)
+                        # IFC2X3 "Analytical Properties(Type)"
+                        pset_u_value = get_pset(
+                            ifc_material,
+                            "Analytical Properties(Type)",
+                            prop="Heat Transfer Coefficient (U)",
+                        )
+                        if pset_u_value:
+                            r_value.firstChild.data = str(
+                                layer_thickness / pset_u_value
+                            )
+
+                        gbxml.appendChild(material)
 
     gbxml.appendChild(create_DocumentHistory(ifc_file, root))
     return root
