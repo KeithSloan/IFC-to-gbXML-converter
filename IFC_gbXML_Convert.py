@@ -270,6 +270,7 @@ def create_gbxml(ifc_file):
                     fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
                 )
 
+                # FIXME Area and Volume should be appended to Space?
                 area = root.createElement("Area")
                 # area.setAttribute("unit", "MetreSquare")
                 area.appendChild(root.createTextNode("1.0"))
@@ -277,15 +278,57 @@ def create_gbxml(ifc_file):
                 # volume.setAttribute("unit", "MetreCube)
                 volume.appendChild(root.createTextNode("1.0"))
 
-                for ifc_pset in ifcopenshell.util.element.get_psets(
-                    ifc_space, psets_only=True
-                ):
-                    if hasattr(ifc_pset, "Area"):
-                        area.firstChild.data = str(ifc_pset["Area"])
-                        space.appendChild(area)
-                    if hasattr(ifc_pset, "Volume"):
-                        volume.firstChild.data = str(ifc_pset["Volume"])
-                        space.appendChild(volume)
+                pset_area = (
+                    get_pset(
+                        # IFC4
+                        ifc_space,
+                        "Qto_SpaceBaseQuantities",
+                        prop="NetFloorArea",
+                    )
+                    or get_pset(
+                        # IFC4
+                        ifc_space,
+                        "Pset_SpaceCommon",
+                        prop="NetPlannedArea",
+                    )
+                    or get_pset(
+                        # IFC2X3
+                        ifc_space,
+                        "BaseQuantities",
+                        prop="NetFloorArea",
+                    )
+                    or get_pset(
+                        # IFC2X3
+                        ifc_space,
+                        "Dimensions",
+                        prop="Area",
+                    )
+                )
+                if pset_area:
+                    area.firstChild.data = str(pset_area)
+
+                pset_volume = (
+                    get_pset(
+                        # IFC4
+                        ifc_space,
+                        "Qto_SpaceBaseQuantities",
+                        prop="NetVolume",
+                    )
+                    or get_pset(
+                        # IFC2X3
+                        ifc_space,
+                        "BaseQuantities",
+                        prop="GrossVolume",
+                    )
+                    or get_pset(
+                        # IFC2X3
+                        ifc_space,
+                        "Dimensions",
+                        prop="Volume",
+                    )
+                )
+                if pset_volume:
+                    volume.firstChild.data = str(pset_volume)
 
                 name = root.createElement("Name")
                 name.appendChild(root.createTextNode("Space_%d" % space_id))
@@ -514,35 +557,67 @@ def create_gbxml(ifc_file):
         # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
         u_value = root.createElement("U-value")
+        # FIXME SI units
         u_value.setAttribute("unit", "WPerSquareMeterK")
         u_value.appendChild(root.createTextNode("10.0"))
+
+        pset_u_value = get_pset(
+            # IFC4
+            ifc_building_element,
+            "Pset_DoorCommon",
+            prop="ThermalTransmittance",
+        ) or get_pset(
+            # IFC4
+            ifc_building_element,
+            "Pset_WindowCommon",
+            prop="ThermalTransmittance",
+        )
+        if pset_u_value:
+            u_value.firstChild.data = str(pset_u_value)
+            window_type.appendChild(u_value)
 
         solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
         solar_heat_gain_coeff.setAttribute("unit", "Fraction")
         solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
+
+        pset_solar_heat = get_pset(
+            # IFC2X3
+            ifc_building_element,
+            "Analytical Properties(Type)",
+            prop="Solar Heat Gain Coefficient",
+        )
+        if pset_solar_heat:
+            solar_heat_gain_coeff.firstChild.data = str(pset_solar_heat)
+            window_type.appendChild(solar_heat_gain_coeff)
 
         transmittance = root.createElement("Transmittance")
         transmittance.setAttribute("unit", "Fraction")
         transmittance.setAttribute("type", "Visible")
         transmittance.appendChild(root.createTextNode("1.0"))
 
-        for ifc_pset in ifcopenshell.util.element.get_psets(
-            ifc_building_element, psets_only=True
-        ):
-            if hasattr(ifc_pset, "ThermalTransmittance"):
-                u_value.firstChild.data = str(ifc_pset["ThermalTransmittance"])
-                window_type.appendChild(u_value)
-            if hasattr(ifc_pset, "Solar Heat Gain Coefficient"):
-                solar_heat_gain_coeff.firstChild.data = str(
-                    ifc_pset["Solar Heat Gain Coefficient"]
-                )
-                window_type.appendChild(solar_heat_gain_coeff)
-            # should be GlazingAreaFraction ??
-            if hasattr(ifc_pset, "Visual Light Transmittance"):
-                transmittance.firstChild.data = str(
-                    ifc_pset["Visual Light Transmittance"]
-                )
-                window_type.appendChild(transmittance)
+        pset_transmittance = (
+            get_pset(
+                # IFC4
+                ifc_building_element,
+                "Pset_DoorCommon",
+                prop="GlazingAreaFraction",
+            )
+            or get_pset(
+                # IFC4
+                ifc_building_element,
+                "Pset_WindowCommon",
+                prop="GlazingAreaFraction",
+            )
+            or get_pset(
+                # IFC2X3
+                ifc_building_element,
+                "Analytical Properties(Type)",
+                prop="Visual Light Transmittance",
+            )
+        )
+        if pset_transmittance:
+            transmittance.firstChild.data = str(pset_transmittance)
+            window_type.appendChild(transmittance)
 
         gbxml.appendChild(window_type)
 
@@ -577,33 +652,58 @@ def create_gbxml(ifc_file):
 
                 # Specify analytical properties of the 'Construction' element by iterating through IFC entities
 
-                # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
-                u_value = root.createElement("U-value")
-                u_value.setAttribute("unit", "WPerSquareMeterK")
-                # FIXME silently gives every construction a U-value even if it is later defined properly with Layers
-                u_value.appendChild(root.createTextNode("10.0"))
+                pset_u_value = (
+                    get_pset(
+                        # IFC4
+                        ifc_building_element,
+                        "Pset_WallCommon",
+                        prop="ThermalTransmittance",
+                    )
+                    or get_pset(
+                        # IFC4
+                        ifc_building_element,
+                        "Pset_SlabCommon",
+                        prop="ThermalTransmittance",
+                    )
+                    or get_pset(
+                        # IFC4
+                        ifc_building_element,
+                        "Pset_RoofCommon",
+                        prop="ThermalTransmittance",
+                    )
+                    or get_pset(
+                        # IFC4
+                        ifc_building_element,
+                        "Pset_CoveringCommon",
+                        prop="ThermalTransmittance",
+                    )
+                    or get_pset(
+                        # IFC2X3
+                        ifc_building_element,
+                        "Analytical Properties(Type)",
+                        prop="Heat Transfer Coefficient (U)",
+                    )
+                )
+                if pset_u_value:
+                    # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
+                    u_value = root.createElement("U-value")
+                    # FIXME SI units
+                    u_value.setAttribute("unit", "WPerSquareMeterK")
+                    u_value.appendChild(root.createTextNode(str(pset_u_value)))
+                    construction.appendChild(u_value)
 
-                absorptance = root.createElement("Absorptance")
-                absorptance.setAttribute("unit", "Fraction")
-                absorptance.setAttribute("type", "ExtIR")
-                absorptance.appendChild(root.createTextNode("1.0"))
-
-                for ifc_pset in ifcopenshell.util.element.get_psets(
-                    ifc_building_element, psets_only=True
-                ):
-                    # IfcWall has ThermalTransmittance
-                    if hasattr(ifc_pset, "ThermalTransmittance"):
-                        u_value.firstChild.data = str(ifc_pset["ThermalTransmittance"])
-                        construction.appendChild(u_value)
-                    # everything else? has Heat Transfer Coefficient (U)
-                    if hasattr(ifc_pset, "Heat Transfer Coefficient (U)"):
-                        u_value.firstChild.data = str(
-                            ifc_pset["Heat Transfer Coefficient (U)"]
-                        )
-                        construction.appendChild(u_value)
-                    if hasattr(ifc_pset, "Absorptance"):
-                        absorptance.firstChild.data = str(ifc_pset["Absorptance"])
-                        construction.appendChild(absorptance)
+                pset_absorptance = get_pset(
+                    # IFC2X3, FIXME IFC4 equivalent?
+                    ifc_building_element,
+                    "Analytical Properties(Type)",
+                    prop="Absorptance",
+                )
+                if pset_absorptance:
+                    absorptance = root.createElement("Absorptance")
+                    absorptance.setAttribute("unit", "Fraction")
+                    absorptance.setAttribute("type", "ExtIR")
+                    absorptance.appendChild(root.createTextNode(str(pset_absorptance)))
+                    construction.appendChild(absorptance)
 
                 for association in ifc_building_element.HasAssociations:
                     if association.is_a("IfcRelAssociatesMaterial"):
@@ -730,33 +830,29 @@ def create_gbxml(ifc_file):
                         r_value.appendChild(root.createTextNode("0.01"))
                         material.appendChild(r_value)
 
-                        pset_r_value = get_pset(
-                            ifc_material,
-                            "Pset_MaterialEnergy",
-                            prop="ThermalConductivityTemperatureDerivative",
-                        )
-                        if pset_r_value:
-                            r_value.firstChild.data = str(pset_r_value)
-
-                        # IFC2X3 "Analytical Properties(Type)"
-                        pset_r_value = get_pset(
-                            ifc_material,
-                            "Analytical Properties(Type)",
-                            prop="Thermal Resistance (R)",
-                        )
-                        if pset_r_value:
-                            r_value.firstChild.data = str(pset_r_value)
-
-                        # IFC2X3 "Analytical Properties(Type)"
-                        pset_u_value = get_pset(
-                            ifc_material,
-                            "Analytical Properties(Type)",
-                            prop="Heat Transfer Coefficient (U)",
-                        )
-                        if pset_u_value:
-                            r_value.firstChild.data = str(
-                                layer_thickness / pset_u_value
+                        pset_r_value = (
+                            get_pset(
+                                # IFC4
+                                ifc_material,
+                                "Pset_MaterialEnergy",
+                                prop="ThermalConductivityTemperatureDerivative",
                             )
+                            or get_pset(
+                                # IFC2X3
+                                ifc_material,
+                                "Analytical Properties(Type)",
+                                prop="Thermal Resistance (R)",
+                            )
+                            or layer_thickness
+                            / get_pset(
+                                # IFC2X3
+                                ifc_material,
+                                "Analytical Properties(Type)",
+                                prop="Heat Transfer Coefficient (U)",
+                            )
+                        )
+                        if pset_r_value:
+                            r_value.firstChild.data = str(pset_r_value)
 
                         gbxml.appendChild(material)
 
