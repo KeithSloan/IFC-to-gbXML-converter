@@ -830,27 +830,25 @@ def create_gbxml(ifc_file):
                         r_value.appendChild(root.createTextNode("0.01"))
                         material.appendChild(r_value)
 
-                        pset_r_value = (
-                            get_pset(
-                                # IFC4
-                                ifc_material,
-                                "Pset_MaterialEnergy",
-                                prop="ThermalConductivityTemperatureDerivative",
-                            )
-                            or get_pset(
-                                # IFC2X3
-                                ifc_material,
-                                "Analytical Properties(Type)",
-                                prop="Thermal Resistance (R)",
-                            )
-                            or layer_thickness
-                            / get_pset(
-                                # IFC2X3
-                                ifc_material,
-                                "Analytical Properties(Type)",
-                                prop="Heat Transfer Coefficient (U)",
-                            )
+                        pset_r_value = get_pset(
+                            # IFC4
+                            ifc_material,
+                            "Pset_MaterialEnergy",
+                            prop="ThermalConductivityTemperatureDerivative",
+                        ) or get_pset(
+                            # IFC2X3
+                            ifc_material,
+                            "Analytical Properties(Type)",
+                            prop="Thermal Resistance (R)",
                         )
+                        pset_u_value = get_pset(
+                            # IFC2X3
+                            ifc_material,
+                            "Analytical Properties(Type)",
+                            prop="Heat Transfer Coefficient (U)",
+                        )
+                        if pset_u_value and not pset_r_value:
+                            pset_r_value = layer_thickness / pset_u_value
                         if pset_r_value:
                             r_value.firstChild.data = str(pset_r_value)
 
