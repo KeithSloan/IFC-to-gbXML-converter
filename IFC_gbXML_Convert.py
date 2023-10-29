@@ -237,8 +237,6 @@ def create_gbxml(ifc_file):
             if not ifc_building.IsDecomposedBy:
                 continue
 
-            # FIXME use Storey Name for Name
-            storey_id = 1
             for ifc_building_storey in ifc_building.IsDecomposedBy[0].RelatedObjects:
                 if not ifc_building_storey.is_a("IfcBuildingStorey"):
                     continue
@@ -251,8 +249,7 @@ def create_gbxml(ifc_file):
                 dict_id[fix_xml_stry(ifc_building_storey.GlobalId)] = building_storey
 
                 name = root.createElement("Name")
-                name.appendChild(root.createTextNode("Storey_%d" % storey_id))
-                storey_id += 1
+                name.appendChild(root.createTextNode(ifc_building_storey.Name))
                 building_storey.appendChild(name)
 
                 level = root.createElement("Level")
@@ -272,7 +269,6 @@ def create_gbxml(ifc_file):
                 if not ifc_building_storey.IsDecomposedBy:
                     continue
 
-                space_id = 1
                 for ifc_space in ifc_building_storey.IsDecomposedBy[0].RelatedObjects:
                     if not ifc_space.is_a("IfcSpace"):
                         continue
@@ -350,9 +346,7 @@ def create_gbxml(ifc_file):
                         volume.firstChild.data = str(pset_volume)
 
                     name = root.createElement("Name")
-                    # FIXME use ifc_space.Name
-                    name.appendChild(root.createTextNode("Space_%d" % space_id))
-                    space_id += 1
+                    name.appendChild(root.createTextNode(ifc_space.Name))
                     space.appendChild(name)
 
                     # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
