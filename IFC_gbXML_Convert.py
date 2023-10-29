@@ -187,29 +187,32 @@ def create_gbxml(ifc_file):
         elevation.appendChild(root.createTextNode(str(ifc_site.RefElevation)))
         location.appendChild(elevation)
 
-        # FIXME assigns all Postal Addresses to all Locations
-        for ifc_postal_address in ifc_file.by_type("IfcPostalAddress"):
-            zipcode = root.createElement("ZipcodeOrPostalCode")
+        ifc_postal_address = ifc_site.SiteAddress
+        zipcode = root.createElement("ZipcodeOrPostalCode")
+        location.appendChild(zipcode)
+        if ifc_postal_address:
             zipcode.appendChild(root.createTextNode(ifc_postal_address.PostalCode))
-            location.appendChild(zipcode)
 
             name = root.createElement("Name")
             name.appendChild(
                 root.createTextNode(
-                    ifc_postal_address.Region + ", " + ifc_postal_address.Country
+                    str(ifc_postal_address.Region)
+                    + ", "
+                    + str(ifc_postal_address.Country)
                 )
             )
             location.appendChild(name)
-        # FIXME silently adds a post code if none in IFC file
-        if not ifc_file.by_type("IfcPostalAddress"):
-            zipcode = root.createElement("ZipcodeOrPostalCode")
+        else:
             zipcode.appendChild(root.createTextNode("S1 2GH"))
-            location.appendChild(zipcode)
 
         # Specify the 'Building' element of the gbXML schema; making use of IFC entity 'IfcBuilding'
         # This new element is added as child to the earlier created 'Campus' element
-        # FIXME assigns all Buildings to all Campuses
-        for ifc_building in ifc_file.by_type("IfcBuilding"):
+        if not ifc_site.IsDecomposedBy:
+            continue
+
+        for ifc_building in ifc_site.IsDecomposedBy[0].RelatedObjects:
+            if not ifc_building.is_a("IfcBuilding"):
+                continue
             building = root.createElement("Building")
             building.setAttribute("id", fix_xml_bldng(ifc_building.GlobalId))
             building.setAttribute("buildingType", "Unknown")
@@ -217,22 +220,28 @@ def create_gbxml(ifc_file):
 
             dict_id[fix_xml_bldng(ifc_building.GlobalId)] = building
 
-            # FIXME assigns all Postal Addresses to all buildings
-            for ifc_postal_address in ifc_file.by_type("IfcPostalAddress"):
+            ifc_postal_address = ifc_building.BuildingAddress
+            if ifc_postal_address:
                 street_address = root.createElement("StreetAddress")
                 street_address.appendChild(
                     root.createTextNode(
-                        ifc_postal_address.Region + ", " + ifc_postal_address.Country
+                        str(ifc_postal_address.Region)
+                        + ", "
+                        + str(ifc_postal_address.Country)
                     )
                 )
                 building.appendChild(street_address)
 
             # Specify the 'BuildingStorey' element of the gbXML schema; making use of IFC entity 'IfcBuildingStorey'
             # This new element is added as child to the earlier created 'Building' element
-            # FIXME assigns all Storeys to all Buildings
+            if not ifc_building.IsDecomposedBy:
+                continue
+
             # FIXME use Storey Name for Name
             storey_id = 1
-            for ifc_building_storey in ifc_file.by_type("IfcBuildingStorey"):
+            for ifc_building_storey in ifc_building.IsDecomposedBy[0].RelatedObjects:
+                if not ifc_building_storey.is_a("IfcBuildingStorey"):
+                    continue
                 building_storey = root.createElement("BuildingStorey")
                 building_storey.setAttribute(
                     "id", fix_xml_stry(ifc_building_storey.GlobalId)
@@ -248,129 +257,140 @@ def create_gbxml(ifc_file):
 
                 level = root.createElement("Level")
                 level.appendChild(
-                    # FIXME use placement if no Elevation
-                    root.createTextNode(str(ifc_building_storey.Elevation))
+                    root.createTextNode(
+                        str(
+                            ifcopenshell.util.placement.get_storey_elevation(
+                                ifc_building_storey
+                            )
+                        )
+                    )
                 )
                 building_storey.appendChild(level)
 
-            # FIXME assigns all Spaces to all Buildings
-            # Specify the 'Space' element of the gbXML schema; making use of IFC entity 'IfcSpace'
-            # This new element is added as child to the earlier created 'Building' element
-            space_id = 1
-            for ifc_space in ifc_file.by_type("IfcSpace"):
-                space = root.createElement("Space")
-                space.setAttribute("id", fix_xml_spc(ifc_space.GlobalId))
-                building.appendChild(space)
+                # Specify the 'Space' element of the gbXML schema; making use of IFC entity 'IfcSpace'
+                # This new element is added as child to the earlier created 'Building' element
+                if not ifc_building_storey.IsDecomposedBy:
+                    continue
 
-                dict_id[fix_xml_spc(ifc_space.GlobalId)] = space
-
-                # Refer to the relating 'BuildingStorey' GUID by iterating through IFC entities
-                space.setAttribute(
-                    "buildingStoreyIdRef",
-                    fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
-                )
-
-                # FIXME Area and Volume should be appended to Space?
-                area = root.createElement("Area")
-                # area.setAttribute("unit", "MetreSquare")
-                area.appendChild(root.createTextNode("1.0"))
-                volume = root.createElement("Volume")
-                # volume.setAttribute("unit", "MetreCube)
-                volume.appendChild(root.createTextNode("1.0"))
-
-                pset_area = (
-                    get_pset(
-                        # IFC4
-                        ifc_space,
-                        "Qto_SpaceBaseQuantities",
-                        prop="NetFloorArea",
-                    )
-                    or get_pset(
-                        # IFC4
-                        ifc_space,
-                        "Pset_SpaceCommon",
-                        prop="NetPlannedArea",
-                    )
-                    or get_pset(
-                        # IFC2X3
-                        ifc_space,
-                        "BaseQuantities",
-                        prop="NetFloorArea",
-                    )
-                    or get_pset(
-                        # IFC2X3
-                        ifc_space,
-                        "Dimensions",
-                        prop="Area",
-                    )
-                )
-                if pset_area:
-                    area.firstChild.data = str(pset_area)
-
-                pset_volume = (
-                    get_pset(
-                        # IFC4
-                        ifc_space,
-                        "Qto_SpaceBaseQuantities",
-                        prop="NetVolume",
-                    )
-                    or get_pset(
-                        # IFC2X3
-                        ifc_space,
-                        "BaseQuantities",
-                        prop="GrossVolume",
-                    )
-                    or get_pset(
-                        # IFC2X3
-                        ifc_space,
-                        "Dimensions",
-                        prop="Volume",
-                    )
-                )
-                if pset_volume:
-                    volume.firstChild.data = str(pset_volume)
-
-                name = root.createElement("Name")
-                # FIXME use ifc_space.Name
-                name.appendChild(root.createTextNode("Space_%d" % space_id))
-                space_id += 1
-                space.appendChild(name)
-
-                # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
-                # This new element is added as child to the earlier created 'Space' element
-                for ifc_rel_space_boundary in ifc_space.BoundedBy:
-
-                    # Make sure a 'SpaceBoundary' is representing an actual element
-                    if ifc_rel_space_boundary.RelatedBuildingElement == None:
+                space_id = 1
+                for ifc_space in ifc_building_storey.IsDecomposedBy[0].RelatedObjects:
+                    if not ifc_space.is_a("IfcSpace"):
                         continue
+                    space = root.createElement("Space")
+                    space.setAttribute("id", fix_xml_spc(ifc_space.GlobalId))
+                    building.appendChild(space)
 
-                    vertices = get_boundary_vertices(ifc_rel_space_boundary)
+                    dict_id[fix_xml_spc(ifc_space.GlobalId)] = space
 
-                    # Create 'SpaceBoundary' elements for the following building elements
-                    if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
-                        "IfcWall",
-                        "IfcSlab",
-                        "IfcRoof",
-                        "IfcCovering",
-                    ]:
+                    # Refer to the relating 'BuildingStorey' GUID by iterating through IFC entities
+                    space.setAttribute(
+                        "buildingStoreyIdRef",
+                        fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
+                    )
 
-                        space_boundary = root.createElement("SpaceBoundary")
-                        space_boundary.setAttribute("isSecondLevelBoundary", "true")
+                    area = root.createElement("Area")
+                    # area.setAttribute("unit", "MetreSquare")
+                    area.appendChild(root.createTextNode("1.0"))
+                    space.appendChild(area)
+                    volume = root.createElement("Volume")
+                    # volume.setAttribute("unit", "MetreCube)
+                    volume.appendChild(root.createTextNode("1.0"))
+                    space.appendChild(volume)
 
-                        # Refer to the relating 'SpaceBoundary' GUID by iterating through IFC entities
-                        space_boundary.setAttribute(
-                            "surfaceIdRef", fix_xml_id(ifc_rel_space_boundary.GlobalId)
+                    pset_area = (
+                        get_pset(
+                            # IFC4
+                            ifc_space,
+                            "Qto_SpaceBaseQuantities",
+                            prop="NetFloorArea",
                         )
-
-                        space.appendChild(space_boundary)
-
-                        planar_geometry = root.createElement("PlanarGeometry")
-                        space_boundary.appendChild(planar_geometry)
-
-                        ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-                        planar_geometry.appendChild(
-                            get_poly_loop(root, vertices, ifc_relating_space)
+                        or get_pset(
+                            # IFC4
+                            ifc_space,
+                            "Pset_SpaceCommon",
+                            prop="NetPlannedArea",
                         )
+                        or get_pset(
+                            # IFC2X3
+                            ifc_space,
+                            "BaseQuantities",
+                            prop="NetFloorArea",
+                        )
+                        or get_pset(
+                            # IFC2X3
+                            ifc_space,
+                            "Dimensions",
+                            prop="Area",
+                        )
+                    )
+                    if pset_area:
+                        area.firstChild.data = str(pset_area)
+
+                    pset_volume = (
+                        get_pset(
+                            # IFC4
+                            ifc_space,
+                            "Qto_SpaceBaseQuantities",
+                            prop="NetVolume",
+                        )
+                        or get_pset(
+                            # IFC2X3
+                            ifc_space,
+                            "BaseQuantities",
+                            prop="GrossVolume",
+                        )
+                        or get_pset(
+                            # IFC2X3
+                            ifc_space,
+                            "Dimensions",
+                            prop="Volume",
+                        )
+                    )
+                    if pset_volume:
+                        volume.firstChild.data = str(pset_volume)
+
+                    name = root.createElement("Name")
+                    # FIXME use ifc_space.Name
+                    name.appendChild(root.createTextNode("Space_%d" % space_id))
+                    space_id += 1
+                    space.appendChild(name)
+
+                    # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
+                    # This new element is added as child to the earlier created 'Space' element
+                    for ifc_rel_space_boundary in ifc_space.BoundedBy:
+
+                        # Make sure a 'SpaceBoundary' is representing an actual element
+                        if ifc_rel_space_boundary.RelatedBuildingElement == None:
+                            continue
+
+                        vertices = get_boundary_vertices(ifc_rel_space_boundary)
+
+                        # Create 'SpaceBoundary' elements for the following building elements
+                        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+                            "IfcWall",
+                            "IfcSlab",
+                            "IfcRoof",
+                            "IfcCovering",
+                        ]:
+
+                            space_boundary = root.createElement("SpaceBoundary")
+                            space_boundary.setAttribute("isSecondLevelBoundary", "true")
+
+                            # Refer to the relating 'SpaceBoundary' GUID by iterating through IFC entities
+                            space_boundary.setAttribute(
+                                "surfaceIdRef",
+                                fix_xml_id(ifc_rel_space_boundary.GlobalId),
+                            )
+
+                            space.appendChild(space_boundary)
+
+                            planar_geometry = root.createElement("PlanarGeometry")
+                            space_boundary.appendChild(planar_geometry)
+
+                            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
+                            planar_geometry.appendChild(
+                                get_poly_loop(root, vertices, ifc_relating_space)
+                            )
 
     # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'Campus' element
@@ -899,7 +919,9 @@ def create_DocumentHistory(ifc_file, root):
     for ifc_person in ifc_file.by_type("IfcPerson"):
 
         created_by = root.createElement("CreatedBy")
-        created_by.setAttribute("personId", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName))
+        created_by.setAttribute(
+            "personId", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName)
+        )
         for ifc_application in ifc_file.by_type("IfcApplication"):
             created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
         if not ifc_file.by_type("IfcApplication"):
@@ -912,7 +934,9 @@ def create_DocumentHistory(ifc_file, root):
         document_history.appendChild(created_by)
 
         person_info = root.createElement("PersonInfo")
-        person_info.setAttribute("id", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName))
+        person_info.setAttribute(
+            "id", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName)
+        )
 
         document_history.appendChild(person_info)
 
