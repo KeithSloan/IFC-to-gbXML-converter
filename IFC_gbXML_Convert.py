@@ -331,6 +331,7 @@ def create_gbxml(ifc_file):
                     volume.firstChild.data = str(pset_volume)
 
                 name = root.createElement("Name")
+                # FIXME use ifc_space.Name
                 name.appendChild(root.createTextNode("Space_%d" % space_id))
                 space_id += 1
                 space.appendChild(name)
@@ -515,6 +516,7 @@ def create_gbxml(ifc_file):
             name = root.createElement("Name")
             name.appendChild(
                 root.createTextNode(
+                    # FIXME not unique, should use Type Name or GUID
                     fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
                 )
             )
@@ -523,6 +525,7 @@ def create_gbxml(ifc_file):
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
                 root.createTextNode(
+                    # FIXME not unique, should use Type Name or GUID
                     fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
                 )
             )
@@ -540,6 +543,7 @@ def create_gbxml(ifc_file):
         "IfcDoor"
     ):
 
+        # FIXME creates a WindowType for every Element. should use Types
         # There doesn't appear to be a 'DoorType'
         window_type = root.createElement("WindowType")
         window_type.setAttribute("id", fix_xml_id(ifc_building_element.GlobalId))
@@ -647,6 +651,7 @@ def create_gbxml(ifc_file):
             if ifc_global_id not in ifc_global_ids:
                 ifc_global_ids.append(ifc_global_id)
 
+                # FIXME creates a Construction for every Element. should use Types
                 construction = root.createElement("Construction")
                 construction.setAttribute("id", fix_xml_cons(ifc_global_id))
                 dict_id[fix_xml_cons(ifc_global_id)] = construction
@@ -754,6 +759,7 @@ def create_gbxml(ifc_file):
                 if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
                     continue
 
+                # FIXME creates a Layer for every Element. should use Types
                 layer = root.createElement("Layer")
                 layer.setAttribute("id", fix_xml_layer(association.GlobalId))
                 dict_id[fix_xml_layer(association.GlobalId)] = layer
@@ -893,7 +899,7 @@ def create_DocumentHistory(ifc_file, root):
     for ifc_person in ifc_file.by_type("IfcPerson"):
 
         created_by = root.createElement("CreatedBy")
-        created_by.setAttribute("personId", ifc_person.GivenName)
+        created_by.setAttribute("personId", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName))
         for ifc_application in ifc_file.by_type("IfcApplication"):
             created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
         if not ifc_file.by_type("IfcApplication"):
@@ -906,7 +912,7 @@ def create_DocumentHistory(ifc_file, root):
         document_history.appendChild(created_by)
 
         person_info = root.createElement("PersonInfo")
-        person_info.setAttribute("id", ifc_person.GivenName)
+        person_info.setAttribute("id", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName))
 
         document_history.appendChild(person_info)
 
