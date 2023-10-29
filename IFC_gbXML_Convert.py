@@ -403,6 +403,7 @@ def create_gbxml(ifc_file):
 
             if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof"):
                 surface.setAttribute("surfaceType", "Roof")
+                surface.setAttribute("exposedToSun", "true")
 
             if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab"):
                 if (
@@ -420,7 +421,7 @@ def create_gbxml(ifc_file):
                 elif (
                     ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL_FIRE"
                 ):
-                    surface.setAttribute("surfaceType", "ExteriorWall")
+                    surface.setAttribute("surfaceType", "InteriorWall")
                     surface.setAttribute("exposedToSun", "false")
                 else:
                     surface.setAttribute("surfaceType", "InteriorWall")
