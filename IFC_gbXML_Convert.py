@@ -476,8 +476,9 @@ def create_gbxml(ifc_file):
     opening_id = 1
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
 
+        ifc_building_element = ifc_rel_space_boundary.RelatedBuildingElement
         # Make sure a 'SpaceBoundary' is representing an actual element
-        if ifc_rel_space_boundary.RelatedBuildingElement == None:
+        if ifc_building_element == None:
             continue
         if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
             continue
@@ -487,10 +488,13 @@ def create_gbxml(ifc_file):
         # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+        if ifc_building_element.is_a() in [
             "IfcWindow",
             "IfcDoor",
         ]:
+
+            if ifc_building_element.IsTypedBy:
+                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
 
             opening = root.createElement("Opening")
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = opening
@@ -498,11 +502,11 @@ def create_gbxml(ifc_file):
             # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
             opening.setAttribute(
                 "windowTypeIdRef",
-                fix_xml_id(ifc_rel_space_boundary.RelatedBuildingElement.GlobalId),
+                fix_xml_id(ifc_building_element.GlobalId),
             )
-            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWindow"):
+            if ifc_building_element.is_a() in ["IfcWindow", "IfcWindowType"]:
                 opening.setAttribute("openingType", "OperableWindow")
-            elif ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcDoor"):
+            elif ifc_building_element.is_a() in ["IfcDoor", "IfcDoorType"]:
                 opening.setAttribute("openingType", "NonSlidingDoor")
 
             opening.setAttribute("id", "Opening%d" % opening_id)
@@ -516,19 +520,13 @@ def create_gbxml(ifc_file):
 
             name = root.createElement("Name")
             name.appendChild(
-                root.createTextNode(
-                    # FIXME not unique, should use Type Name or GUID
-                    fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
-                )
+                root.createTextNode(fix_xml_name(ifc_building_element.Name))
             )
             opening.appendChild(name)
 
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
-                root.createTextNode(
-                    # FIXME not unique, should use Type Name or GUID
-                    fix_xml_name(ifc_rel_space_boundary.RelatedBuildingElement.Name)
-                )
+                root.createTextNode(fix_xml_name(ifc_building_element.Name))
             )
             opening.appendChild(cad_object_id)
 
@@ -538,94 +536,102 @@ def create_gbxml(ifc_file):
                 ]
                 surface.appendChild(opening)
 
+    ifc_building_element_guids = []
     # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
     # This new element is added as child to the earlier created 'gbXML' element
     for ifc_building_element in ifc_file.by_type("IfcWindow") + ifc_file.by_type(
         "IfcDoor"
     ):
 
-        # FIXME creates a WindowType for every Element. should use Types
-        # There doesn't appear to be a 'DoorType'
-        window_type = root.createElement("WindowType")
-        window_type.setAttribute("id", fix_xml_id(ifc_building_element.GlobalId))
-        dict_id[fix_xml_id(ifc_building_element.GlobalId)] = window_type
+        if ifc_building_element.IsTypedBy:
+            ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
 
-        name = root.createElement("Name")
-        name.appendChild(root.createTextNode(fix_xml_name(ifc_building_element.Name)))
-        window_type.appendChild(name)
+        ifc_building_element_guid = ifc_building_element.GlobalId
+        if ifc_building_element_guid not in ifc_building_element_guids:
+            ifc_building_element_guids.append(ifc_building_element_guid)
+            # There doesn't appear to be a 'DoorType'
+            window_type = root.createElement("WindowType")
+            window_type.setAttribute("id", fix_xml_id(ifc_building_element.GlobalId))
+            dict_id[fix_xml_id(ifc_building_element.GlobalId)] = window_type
 
-        description = root.createElement("Description")
-        description.appendChild(
-            root.createTextNode(fix_xml_name(ifc_building_element.Name))
-        )
-        window_type.appendChild(description)
+            name = root.createElement("Name")
+            name.appendChild(
+                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+            )
+            window_type.appendChild(name)
 
-        # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
+            description = root.createElement("Description")
+            description.appendChild(
+                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+            )
+            window_type.appendChild(description)
 
-        u_value = root.createElement("U-value")
-        # FIXME SI units
-        u_value.setAttribute("unit", "WPerSquareMeterK")
-        u_value.appendChild(root.createTextNode("10.0"))
+            # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
-        pset_u_value = get_pset(
-            # IFC4
-            ifc_building_element,
-            "Pset_DoorCommon",
-            prop="ThermalTransmittance",
-        ) or get_pset(
-            # IFC4
-            ifc_building_element,
-            "Pset_WindowCommon",
-            prop="ThermalTransmittance",
-        )
-        if pset_u_value:
-            u_value.firstChild.data = str(pset_u_value)
-            window_type.appendChild(u_value)
+            u_value = root.createElement("U-value")
+            # FIXME SI units
+            u_value.setAttribute("unit", "WPerSquareMeterK")
+            u_value.appendChild(root.createTextNode("10.0"))
 
-        solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
-        solar_heat_gain_coeff.setAttribute("unit", "Fraction")
-        solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
-
-        pset_solar_heat = get_pset(
-            # IFC2X3
-            ifc_building_element,
-            "Analytical Properties(Type)",
-            prop="Solar Heat Gain Coefficient",
-        )
-        if pset_solar_heat:
-            solar_heat_gain_coeff.firstChild.data = str(pset_solar_heat)
-            window_type.appendChild(solar_heat_gain_coeff)
-
-        transmittance = root.createElement("Transmittance")
-        transmittance.setAttribute("unit", "Fraction")
-        transmittance.setAttribute("type", "Visible")
-        transmittance.appendChild(root.createTextNode("1.0"))
-
-        pset_transmittance = (
-            get_pset(
+            pset_u_value = get_pset(
                 # IFC4
                 ifc_building_element,
                 "Pset_DoorCommon",
-                prop="GlazingAreaFraction",
-            )
-            or get_pset(
+                prop="ThermalTransmittance",
+            ) or get_pset(
                 # IFC4
                 ifc_building_element,
                 "Pset_WindowCommon",
-                prop="GlazingAreaFraction",
+                prop="ThermalTransmittance",
             )
-            or get_pset(
+            if pset_u_value:
+                u_value.firstChild.data = str(pset_u_value)
+                window_type.appendChild(u_value)
+
+            solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
+            solar_heat_gain_coeff.setAttribute("unit", "Fraction")
+            solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
+
+            pset_solar_heat = get_pset(
                 # IFC2X3
                 ifc_building_element,
                 "Analytical Properties(Type)",
-                prop="Visual Light Transmittance",
+                prop="Solar Heat Gain Coefficient",
             )
-        )
-        if pset_transmittance:
-            transmittance.firstChild.data = str(pset_transmittance)
-            window_type.appendChild(transmittance)
+            if pset_solar_heat:
+                solar_heat_gain_coeff.firstChild.data = str(pset_solar_heat)
+                window_type.appendChild(solar_heat_gain_coeff)
 
-        gbxml.appendChild(window_type)
+            transmittance = root.createElement("Transmittance")
+            transmittance.setAttribute("unit", "Fraction")
+            transmittance.setAttribute("type", "Visible")
+            transmittance.appendChild(root.createTextNode("1.0"))
+
+            pset_transmittance = (
+                get_pset(
+                    # IFC4
+                    ifc_building_element,
+                    "Pset_DoorCommon",
+                    prop="GlazingAreaFraction",
+                )
+                or get_pset(
+                    # IFC4
+                    ifc_building_element,
+                    "Pset_WindowCommon",
+                    prop="GlazingAreaFraction",
+                )
+                or get_pset(
+                    # IFC2X3
+                    ifc_building_element,
+                    "Analytical Properties(Type)",
+                    prop="Visual Light Transmittance",
+                )
+            )
+            if pset_transmittance:
+                transmittance.firstChild.data = str(pset_transmittance)
+                window_type.appendChild(transmittance)
+
+            gbxml.appendChild(window_type)
 
     # Specify the 'Construction' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'gbXML' element
@@ -648,7 +654,6 @@ def create_gbxml(ifc_file):
             ifc_global_id = ifc_building_element.HasAssociations[0].GlobalId
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
-            # FIXME use a set
             if ifc_global_id not in ifc_global_ids:
                 ifc_global_ids.append(ifc_global_id)
 
@@ -810,7 +815,6 @@ def create_gbxml(ifc_file):
                     ifc_material = ifc_material_layer.Material
                     ifc_material_layer_id = ifc_material_layer.id()
                     # Make use of a list to make sure no same 'Materials' elements are added twice
-                    # FIXME use a set
                     if ifc_material_layer_id not in ifc_material_layer_ids:
                         ifc_material_layer_ids.append(ifc_material_layer_id)
 
@@ -901,7 +905,7 @@ def create_DocumentHistory(ifc_file, root):
 
         created_by = root.createElement("CreatedBy")
         created_by.setAttribute(
-            "personId", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName)
+            "personId", str(ifc_person.GivenName) + " " + str(ifc_person.FamilyName)
         )
         for ifc_application in ifc_file.by_type("IfcApplication"):
             created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
@@ -916,7 +920,7 @@ def create_DocumentHistory(ifc_file, root):
 
         person_info = root.createElement("PersonInfo")
         person_info.setAttribute(
-            "id", str(ifc_person.FamilyName) + ", " + str(ifc_person.GivenName)
+            "id", str(ifc_person.GivenName) + " " + str(ifc_person.FamilyName)
         )
 
         document_history.appendChild(person_info)
