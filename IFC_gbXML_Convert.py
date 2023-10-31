@@ -46,12 +46,15 @@ def get_boundary_vertices(ifc_rel_space_boundary):
         else:
             return []
         ifc_plane = ifc_curve.BasisSurface
+    space_matrix = ifcopenshell.util.placement.get_local_placement(
+        ifc_rel_space_boundary.RelatingSpace.ObjectPlacement
+    )
     plane_matrix = ifcopenshell.util.placement.get_axis2placement(ifc_plane.Position)
     plane_vertices = [
         np.array(v + (0, 1)) if len(v) == 2 else np.array(v + (1,))
         for v in plane_coords
     ]
-    vertices = [(plane_matrix @ v)[0:3] for v in plane_vertices]
+    vertices = [(space_matrix @ plane_matrix @ v)[0:3] for v in plane_vertices]
     if (
         np.dot(
             np.cross(vertices[1] - vertices[0], vertices[-1] - vertices[0]),
@@ -63,20 +66,13 @@ def get_boundary_vertices(ifc_rel_space_boundary):
     return vertices
 
 
-def get_poly_loop(root, vertices, ifc_relating_space):
+def get_poly_loop(root, vertices):
     poly_loop = root.createElement("PolyLoop")
-    if ifc_relating_space.ObjectPlacement.PlacementRelTo:
-        new_z = ifc_relating_space.ObjectPlacement.PlacementRelTo.RelativePlacement.Location.Coordinates[
-            2
-        ]
-    else:
-        new_z = 0.0
     # gbXML PolyLoops don't have coincident start/end vertices
     if np.allclose(vertices[0], vertices[-1]):
         del vertices[-1]
     for v in vertices:
         x, y, z = v
-        z = z + new_z
         cartesian_point = root.createElement("CartesianPoint")
         for c in x, y, z:
             if "e-" in str(c):
@@ -381,10 +377,7 @@ def create_gbxml(ifc_file):
                             planar_geometry = root.createElement("PlanarGeometry")
                             space_boundary.appendChild(planar_geometry)
 
-                            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-                            planar_geometry.appendChild(
-                                get_poly_loop(root, vertices, ifc_relating_space)
-                            )
+                            planar_geometry.appendChild(get_poly_loop(root, vertices))
 
     # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'Campus' element
@@ -470,10 +463,7 @@ def create_gbxml(ifc_file):
             planar_geometry = root.createElement("PlanarGeometry")
             surface.appendChild(planar_geometry)
 
-            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-            planar_geometry.appendChild(
-                get_poly_loop(root, vertices, ifc_relating_space)
-            )
+            planar_geometry.appendChild(get_poly_loop(root, vertices))
 
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
@@ -522,10 +512,7 @@ def create_gbxml(ifc_file):
             planar_geometry = root.createElement("PlanarGeometry")
             opening.appendChild(planar_geometry)
 
-            ifc_relating_space = ifc_rel_space_boundary.RelatingSpace
-            planar_geometry.appendChild(
-                get_poly_loop(root, vertices, ifc_relating_space)
-            )
+            planar_geometry.appendChild(get_poly_loop(root, vertices))
 
             name = root.createElement("Name")
             name.appendChild(
