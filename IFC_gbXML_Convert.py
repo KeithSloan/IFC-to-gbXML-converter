@@ -493,7 +493,10 @@ def create_gbxml(ifc_file):
             "IfcDoor",
         ]:
 
-            if ifc_building_element.IsTypedBy:
+            if (
+                hasattr(ifc_building_element, "IsTypedBy")
+                and ifc_building_element.IsTypedBy
+            ):
                 ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
 
             opening = root.createElement("Opening")
@@ -530,10 +533,20 @@ def create_gbxml(ifc_file):
             )
             opening.appendChild(cad_object_id)
 
-            if fix_xml_id(ifc_rel_space_boundary.ParentBoundary.GlobalId) in dict_id:
-                surface = dict_id[
-                    fix_xml_id(ifc_rel_space_boundary.ParentBoundary.GlobalId)
-                ]
+            if hasattr(ifc_rel_space_boundary, "ParentBoundary"):
+                # IFC4
+                ifc_parent_boundary = ifc_rel_space_boundary.ParentBoundary
+            else:
+                # IFC2X3
+                ifc_parent_boundary = (
+                    ifc_rel_space_boundary.RelatedBuildingElement.FillsVoids[
+                        0
+                    ].RelatedBuildingElement.ProvidesBoundaries[0]
+                )
+                print(ifc_parent_boundary)
+
+            if fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id:
+                surface = dict_id[fix_xml_id(ifc_parent_boundary.GlobalId)]
                 surface.appendChild(opening)
 
     ifc_building_element_guids = []
@@ -543,7 +556,10 @@ def create_gbxml(ifc_file):
         "IfcDoor"
     ):
 
-        if ifc_building_element.IsTypedBy:
+        if (
+            hasattr(ifc_building_element, "IsTypedBy")
+            and ifc_building_element.IsTypedBy
+        ):
             ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
 
         ifc_building_element_guid = ifc_building_element.GlobalId
