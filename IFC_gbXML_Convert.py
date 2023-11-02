@@ -358,6 +358,7 @@ def create_gbxml(ifc_file):
                         # Create 'SpaceBoundary' elements for the following building elements
                         if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
                             "IfcWall",
+                            "IfcWallStandardCase",
                             "IfcSlab",
                             "IfcRoof",
                             "IfcCovering",
@@ -397,6 +398,7 @@ def create_gbxml(ifc_file):
         # Specify each 'Surface' element and set 'SurfaceType' attributes
         if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
             "IfcWall",
+            "IfcWallStandardCase",
             "IfcSlab",
             "IfcRoof",
             "IfcCovering",
@@ -539,11 +541,10 @@ def create_gbxml(ifc_file):
             else:
                 # IFC2X3
                 ifc_parent_boundary = (
-                    ifc_rel_space_boundary.RelatedBuildingElement.FillsVoids[
-                        0
-                    ].RelatedBuildingElement.ProvidesBoundaries[0]
+                    ifc_rel_space_boundary.RelatedBuildingElement.FillsVoids[0]
+                    .RelatingOpeningElement.VoidsElements[0]
+                    .RelatingBuildingElement.ProvidesBoundaries[0]
                 )
-                print(ifc_parent_boundary)
 
             if fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id:
                 surface = dict_id[fix_xml_id(ifc_parent_boundary.GlobalId)]
@@ -661,6 +662,7 @@ def create_gbxml(ifc_file):
 
         if ifc_building_element.is_a() in [
             "IfcWall",
+            "IfcWallStandardCase",
             "IfcSlab",
             "IfcRoof",
             "IfcCovering",
@@ -761,6 +763,7 @@ def create_gbxml(ifc_file):
 
         if ifc_building_element.is_a() in [
             "IfcWall",
+            "IfcWallStandardCase",
             "IfcSlab",
             "IfcRoof",
             "IfcCovering",
@@ -808,6 +811,7 @@ def create_gbxml(ifc_file):
 
         if ifc_building_element.is_a() in [
             "IfcWall",
+            "IfcWallStandardCase",
             "IfcSlab",
             "IfcRoof",
             "IfcCovering",
