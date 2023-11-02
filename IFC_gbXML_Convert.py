@@ -89,7 +89,7 @@ def get_poly_loop(root, vertices):
 
 # Align the gbXML input according to the predefined official gbXML schema
 def remove_unnecessary_characters(element):
-    char_to_replace = {"$": "", ":": "", " ": "", "(": "", ")": ""}
+    char_to_replace = {"$": "-", ":": "", " ": "_", "(": "", ")": ""}
     for key, value in char_to_replace.items():
         element = element.replace(key, value)
     return element
@@ -110,6 +110,9 @@ def fix_xml_stry(element):
 def fix_xml_spc(element):
     return "space_" + element.replace("$", "-")
 
+
+def fix_xml_bnd(element):
+    return "boundary_" + element.replace("$", "-")
 
 def fix_xml_id(element):
     return "id_" + element.replace("$", "-")
@@ -449,7 +452,7 @@ def create_gbxml(ifc_file):
 
             name = root.createElement("Name")
             name.appendChild(
-                root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
+                root.createTextNode(fix_xml_bnd(ifc_rel_space_boundary.GlobalId))
             )
 
             surface.appendChild(name)
@@ -469,7 +472,7 @@ def create_gbxml(ifc_file):
 
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
-                root.createTextNode(fix_xml_name(ifc_rel_space_boundary.GlobalId))
+                root.createTextNode(fix_xml_bnd(ifc_rel_space_boundary.GlobalId))
             )
             surface.appendChild(cad_object_id)
 
