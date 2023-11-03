@@ -114,6 +114,7 @@ def fix_xml_spc(element):
 def fix_xml_bnd(element):
     return "boundary_" + element.replace("$", "-")
 
+
 def fix_xml_id(element):
     return "id_" + element.replace("$", "-")
 
@@ -543,11 +544,16 @@ def create_gbxml(ifc_file):
                 ifc_parent_boundary = ifc_rel_space_boundary.ParentBoundary
             else:
                 # IFC2X3
-                ifc_parent_boundary = (
+                for ifc_boundary in (
                     ifc_rel_space_boundary.RelatedBuildingElement.FillsVoids[0]
                     .RelatingOpeningElement.VoidsElements[0]
-                    .RelatingBuildingElement.ProvidesBoundaries[0]
-                )
+                    .RelatingBuildingElement.ProvidesBoundaries
+                ):
+                    if (
+                        ifc_boundary.RelatingSpace
+                        == ifc_rel_space_boundary.RelatingSpace
+                    ):
+                        ifc_parent_boundary = ifc_boundary
 
             if fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id:
                 surface = dict_id[fix_xml_id(ifc_parent_boundary.GlobalId)]
