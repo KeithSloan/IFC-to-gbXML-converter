@@ -388,8 +388,10 @@ def create_gbxml(ifc_file):
     # This new element is added as child to the earlier created 'Campus' element
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
 
+        ifc_building_element = ifc_rel_space_boundary.RelatedBuildingElement
+
         # Make sure a 'SpaceBoundary' is representing an actual element
-        if ifc_rel_space_boundary.RelatedBuildingElement == None:
+        if ifc_building_element == None:
             continue
         if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
             continue
@@ -400,7 +402,7 @@ def create_gbxml(ifc_file):
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
         # Specify each 'Surface' element and set 'SurfaceType' attributes
-        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
+        if ifc_building_element.is_a() in [
             "IfcWall",
             "IfcWallStandardCase",
             "IfcSlab",
@@ -412,14 +414,14 @@ def create_gbxml(ifc_file):
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
 
-            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcCovering"):
+            if ifc_building_element.is_a("IfcCovering"):
                 surface.setAttribute("surfaceType", "Ceiling")
 
-            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcRoof"):
+            if ifc_building_element.is_a("IfcRoof"):
                 surface.setAttribute("surfaceType", "Roof")
                 surface.setAttribute("exposedToSun", "true")
 
-            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcSlab"):
+            if ifc_building_element.is_a("IfcSlab"):
                 if (
                     ifc_rel_space_boundary.InternalOrExternalBoundary
                     == "EXTERNAL_EARTH"
@@ -428,7 +430,7 @@ def create_gbxml(ifc_file):
                 else:
                     surface.setAttribute("surfaceType", "InteriorFloor")
 
-            if ifc_rel_space_boundary.RelatedBuildingElement.is_a("IfcWall"):
+            if ifc_building_element.is_a("IfcWall"):
                 if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL":
                     surface.setAttribute("surfaceType", "ExteriorWall")
                     surface.setAttribute("exposedToSun", "true")
@@ -441,15 +443,25 @@ def create_gbxml(ifc_file):
                     surface.setAttribute("surfaceType", "InteriorWall")
                     surface.setAttribute("exposedToSun", "false")
 
-            # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-            surface.setAttribute(
-                "constructionIdRef",
-                fix_xml_cons(
-                    ifc_rel_space_boundary.RelatedBuildingElement.HasAssociations[
-                        0
-                    ].GlobalId
-                ),
-            )
+            if (
+                hasattr(ifc_building_element, "IsTypedBy")
+                and ifc_building_element.IsTypedBy
+            ):
+                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+
+            for association in ifc_building_element.HasAssociations:
+                if association.is_a("IfcRelAssociatesMaterial"):
+                    if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
+                        ifc_material_layer_set = association.RelatingMaterial
+                    elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+                        ifc_material_layer_set = (
+                            association.RelatingMaterial.ForLayerSet
+                        )
+
+                    surface.setAttribute(
+                        "constructionIdRef",
+                        fix_xml_cons(str(ifc_material_layer_set.id())),
+                    )
 
             name = root.createElement("Name")
             name.appendChild(
@@ -545,7 +557,7 @@ def create_gbxml(ifc_file):
             else:
                 # IFC2X3
                 for ifc_boundary in (
-                    ifc_rel_space_boundary.RelatedBuildingElement.FillsVoids[0]
+                    ifc_building_element.FillsVoids[0]
                     .RelatingOpeningElement.VoidsElements[0]
                     .RelatingBuildingElement.ProvidesBoundaries
                 ):
@@ -661,7 +673,8 @@ def create_gbxml(ifc_file):
 
     # Specify the 'Construction' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'gbXML' element
-    ifc_global_ids = []
+    ifc_ids = []
+    ifc_material_layer_ids = []
 
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
         # Make sure a 'SpaceBoundary' is representing an actual element
@@ -677,17 +690,33 @@ def create_gbxml(ifc_file):
             "IfcCovering",
         ]:
 
-            # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
-            ifc_global_id = ifc_building_element.HasAssociations[0].GlobalId
+            if (
+                hasattr(ifc_building_element, "IsTypedBy")
+                and ifc_building_element.IsTypedBy
+            ):
+                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+
+            ifc_material_layer_set = None
+            for association in ifc_building_element.HasAssociations:
+                if association.is_a("IfcRelAssociatesMaterial"):
+                    if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
+                        ifc_material_layer_set = association.RelatingMaterial
+                    elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+                        ifc_material_layer_set = (
+                            association.RelatingMaterial.ForLayerSet
+                        )
+            if not ifc_material_layer_set:
+                continue
+
+            ifc_id = str(ifc_material_layer_set.id())
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
-            if ifc_global_id not in ifc_global_ids:
-                ifc_global_ids.append(ifc_global_id)
+            if ifc_id not in ifc_ids:
+                ifc_ids.append(ifc_id)
 
-                # FIXME creates a Construction for every Element. should use Types
                 construction = root.createElement("Construction")
-                construction.setAttribute("id", fix_xml_cons(ifc_global_id))
-                dict_id[fix_xml_cons(ifc_global_id)] = construction
+                construction.setAttribute("id", fix_xml_cons(ifc_id))
+                dict_id[fix_xml_cons(ifc_id)] = construction
 
                 # Specify analytical properties of the 'Construction' element by iterating through IFC entities
 
@@ -744,64 +773,27 @@ def create_gbxml(ifc_file):
                     absorptance.appendChild(root.createTextNode(str(pset_absorptance)))
                     construction.appendChild(absorptance)
 
-                for association in ifc_building_element.HasAssociations:
-                    if association.is_a("IfcRelAssociatesMaterial"):
-                        # Refer to the relating 'IfcRelAssociatesMaterial' GUID by iterating through IFC entities
+                layer_id = root.createElement("LayerId")
+                layer_id.setAttribute("layerIdRef", fix_xml_layer(ifc_id))
+                construction.appendChild(layer_id)
 
-                        layer_id = root.createElement("LayerId")
-                        layer_id.setAttribute(
-                            "layerIdRef", fix_xml_layer(association.GlobalId)
-                        )
-                        construction.appendChild(layer_id)
-
-                        # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
-                        name = root.createElement("Name")
-                        if hasattr(association.RelatingMaterial, "ForLayerSet"):
-                            name.appendChild(
-                                root.createTextNode(
-                                    association.RelatingMaterial.ForLayerSet.LayerSetName
-                                )
-                            )
-                        construction.appendChild(name)
+                # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
+                name = root.createElement("Name")
+                name.appendChild(
+                    root.createTextNode(ifc_material_layer_set.LayerSetName)
+                )
+                construction.appendChild(name)
 
                 gbxml.appendChild(construction)
 
-    # NOTE the 'Layer' element of the gbXML schema is not a layer, it is a
-    # collection of layers, ie. a layer set
-    for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
+                # NOTE the 'Layer' element of the gbXML schema is not a layer, it is a
+                # collection of layers, ie. a layer set
 
-        if ifc_building_element.is_a() in [
-            "IfcWall",
-            "IfcWallStandardCase",
-            "IfcSlab",
-            "IfcRoof",
-            "IfcCovering",
-        ]:
-
-            # Try and catch an Element that is just an Aggregate
-            if ifc_building_element.IsDecomposedBy:
-                continue
-
-            for association in ifc_building_element.HasAssociations:
-                if not association.is_a("IfcRelAssociatesMaterial"):
-                    continue
-                # FIXME Assumes the IFC element has a Usage
-                # FIXME there is a Usage for every instance, so we get a
-                # 'Layer' element for every wall, slab and roof, but we don't
-                # use Usage attributes. Better to use the layer set for the
-                # type (or instance)
-                if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
-                    continue
-
-                # FIXME creates a Layer for every Element. should use Types
                 layer = root.createElement("Layer")
-                layer.setAttribute("id", fix_xml_layer(association.GlobalId))
-                dict_id[fix_xml_layer(association.GlobalId)] = layer
+                layer.setAttribute("id", fix_xml_layer(ifc_id))
+                dict_id[fix_xml_layer(ifc_id)] = layer
 
-                # Specify the 'IfcMaterialLayer' entity and iterate to each 'IfcMaterial' entity
-                for (
-                    ifc_material_layer
-                ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
+                for ifc_material_layer in ifc_material_layer_set.MaterialLayers:
                     material_id = root.createElement("MaterialId")
                     material_id.setAttribute(
                         "materialIdRef", "mat_%d" % ifc_material_layer.id()
@@ -812,34 +804,7 @@ def create_gbxml(ifc_file):
 
                 gbxml.appendChild(layer)
 
-    # NOTE 'Material' element of the gbXML schema is *not* a material, it is a
-    # material & thickness combo, ie. a material layer
-    ifc_material_layer_ids = []
-
-    for ifc_building_element in ifc_file.by_type("IfcBuildingElement"):
-
-        if ifc_building_element.is_a() in [
-            "IfcWall",
-            "IfcWallStandardCase",
-            "IfcSlab",
-            "IfcRoof",
-            "IfcCovering",
-        ]:
-
-            # Try and catch an Element that is just an Aggregate
-            if ifc_building_element.IsDecomposedBy:
-                continue
-
-            for association in ifc_building_element.HasAssociations:
-                if not association.is_a("IfcRelAssociatesMaterial"):
-                    continue
-                # FIXME Assumes the IFC element has a Usage
-                if not association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
-                    continue
-
-                for (
-                    ifc_material_layer
-                ) in association.RelatingMaterial.ForLayerSet.MaterialLayers:
+                for ifc_material_layer in ifc_material_layer_set.MaterialLayers:
 
                     ifc_material = ifc_material_layer.Material
                     ifc_material_layer_id = ifc_material_layer.id()
@@ -934,7 +899,10 @@ def create_DocumentHistory(ifc_file, root):
 
         created_by = root.createElement("CreatedBy")
         created_by.setAttribute(
-            "personId", str(ifc_person.GivenName) + " " + str(ifc_person.FamilyName)
+            "personId",
+            remove_unnecessary_characters(
+                str(ifc_person.GivenName) + "_" + str(ifc_person.FamilyName)
+            ),
         )
         for ifc_application in ifc_file.by_type("IfcApplication"):
             created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
@@ -949,7 +917,10 @@ def create_DocumentHistory(ifc_file, root):
 
         person_info = root.createElement("PersonInfo")
         person_info.setAttribute(
-            "id", str(ifc_person.GivenName) + " " + str(ifc_person.FamilyName)
+            "id",
+            remove_unnecessary_characters(
+                str(ifc_person.GivenName) + "_" + str(ifc_person.FamilyName)
+            ),
         )
 
         document_history.appendChild(person_info)
