@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import ifcopenshell.util.placement
+import ifcopenshell.util.unit
 import numpy as np
 import datetime
 import time
@@ -66,7 +67,7 @@ def get_boundary_vertices(ifc_rel_space_boundary):
     return vertices
 
 
-def get_poly_loop(root, vertices):
+def get_poly_loop(root, vertices, linear_unit_scale=1.0):
     poly_loop = root.createElement("PolyLoop")
     # gbXML PolyLoops don't have coincident start/end vertices
     if np.allclose(vertices[0], vertices[-1]):
@@ -77,6 +78,7 @@ def get_poly_loop(root, vertices):
         for c in x, y, z:
             if "e-" in str(c):
                 c = 0.0
+            c *= linear_unit_scale
             coordinate = root.createElement("Coordinate")
             coordinate.appendChild(root.createTextNode(str(c)))
             cartesian_point.appendChild(coordinate)
@@ -140,7 +142,6 @@ def create_gbxml(ifc_file):
     gbxml = root.createElement("gbXML")
     root.appendChild(gbxml)
 
-    # FIXME support non-SI units
     # Create attributes for the 'gbXML' element
     gbxml.setAttribute("xmlns", "http://www.gbxml.org/schema")
     gbxml.setAttribute("temperatureUnit", "C")
@@ -149,6 +150,37 @@ def create_gbxml(ifc_file):
     gbxml.setAttribute("volumeUnit", "CubicMeters")
     gbxml.setAttribute("useSIUnitsForResults", "true")
     gbxml.setAttribute("version", "0.37")
+
+    linear_unit_scale = ifcopenshell.util.unit.calculate_unit_scale(ifc_file)
+
+    area_unit_scale = 1.0
+    area_unit = ifcopenshell.util.unit.get_project_unit(ifc_file, "AREAUNIT")
+    while area_unit.is_a("IfcConversionBasedUnit"):
+        area_unit_scale *= area_unit.ConversionFactor.ValueComponent.wrappedValue
+        area_unit = area_unit.ConversionFactor.UnitComponent
+    if area_unit.is_a("IfcSIUnit"):
+        area_unit_scale *= ifcopenshell.util.unit.get_prefix_multiplier(
+            area_unit.Prefix
+        )
+
+    volume_unit_scale = 1.0
+    volume_unit = ifcopenshell.util.unit.get_project_unit(ifc_file, "VOLUMEUNIT")
+    while volume_unit.is_a("IfcConversionBasedUnit"):
+        volume_unit_scale *= volume_unit.ConversionFactor.ValueComponent.wrappedValue
+        volume_unit = volume_unit.ConversionFactor.UnitComponent
+    if volume_unit.is_a("IfcSIUnit"):
+        volume_unit_scale *= ifcopenshell.util.unit.get_prefix_multiplier(
+            volume_unit.Prefix
+        )
+
+    # crude check for imperial units
+    imperial_units = False
+    if ifcopenshell.util.unit.get_project_unit(ifc_file, "LENGTHUNIT").Name in [
+        "inch",
+        "foot",
+        "yard",
+    ]:
+        imperial_units = True
 
     # Create a dictionary to store all gbXML element Ids
     dict_id = {}
@@ -285,11 +317,12 @@ def create_gbxml(ifc_file):
                     )
 
                     area = root.createElement("Area")
-                    # area.setAttribute("unit", "MetreSquare")
+                    area.setAttribute("unit", "SquareMeters")
                     area.appendChild(root.createTextNode("1.0"))
                     space.appendChild(area)
+
                     volume = root.createElement("Volume")
-                    # volume.setAttribute("unit", "MetreCube)
+                    volume.setAttribute("unit", "CubicMeters")
                     volume.appendChild(root.createTextNode("1.0"))
                     space.appendChild(volume)
 
@@ -320,7 +353,7 @@ def create_gbxml(ifc_file):
                         )
                     )
                     if pset_area:
-                        area.firstChild.data = str(pset_area)
+                        area.firstChild.data = str(pset_area * area_unit_scale)
 
                     pset_volume = (
                         get_pset(
@@ -343,7 +376,7 @@ def create_gbxml(ifc_file):
                         )
                     )
                     if pset_volume:
-                        volume.firstChild.data = str(pset_volume)
+                        volume.firstChild.data = str(pset_volume * volume_unit_scale)
 
                     name = root.createElement("Name")
                     name.appendChild(root.createTextNode(ifc_space.Name))
@@ -382,7 +415,11 @@ def create_gbxml(ifc_file):
                             planar_geometry = root.createElement("PlanarGeometry")
                             space_boundary.appendChild(planar_geometry)
 
-                            planar_geometry.appendChild(get_poly_loop(root, vertices))
+                            planar_geometry.appendChild(
+                                get_poly_loop(
+                                    root, vertices, linear_unit_scale=linear_unit_scale
+                                )
+                            )
 
     # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'Campus' element
@@ -481,7 +518,9 @@ def create_gbxml(ifc_file):
             planar_geometry = root.createElement("PlanarGeometry")
             surface.appendChild(planar_geometry)
 
-            planar_geometry.appendChild(get_poly_loop(root, vertices))
+            planar_geometry.appendChild(
+                get_poly_loop(root, vertices, linear_unit_scale=linear_unit_scale)
+            )
 
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
@@ -537,7 +576,9 @@ def create_gbxml(ifc_file):
             planar_geometry = root.createElement("PlanarGeometry")
             opening.appendChild(planar_geometry)
 
-            planar_geometry.appendChild(get_poly_loop(root, vertices))
+            planar_geometry.appendChild(
+                get_poly_loop(root, vertices, linear_unit_scale=linear_unit_scale)
+            )
 
             name = root.createElement("Name")
             name.appendChild(
@@ -607,7 +648,6 @@ def create_gbxml(ifc_file):
             # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
             u_value = root.createElement("U-value")
-            # FIXME SI units
             u_value.setAttribute("unit", "WPerSquareMeterK")
             u_value.appendChild(root.createTextNode("10.0"))
 
@@ -623,6 +663,8 @@ def create_gbxml(ifc_file):
                 prop="ThermalTransmittance",
             )
             if pset_u_value:
+                if imperial_units:
+                    pset_u_value *= 5.678
                 u_value.firstChild.data = str(pset_u_value)
                 window_type.appendChild(u_value)
 
@@ -755,7 +797,8 @@ def create_gbxml(ifc_file):
                 if pset_u_value:
                     # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
                     u_value = root.createElement("U-value")
-                    # FIXME SI units
+                    if imperial_units:
+                        pset_u_value *= 5.678
                     u_value.setAttribute("unit", "WPerSquareMeterK")
                     u_value.appendChild(root.createTextNode(str(pset_u_value)))
                     construction.appendChild(u_value)
@@ -821,16 +864,16 @@ def create_gbxml(ifc_file):
                         material.appendChild(name)
 
                         thickness = root.createElement("Thickness")
-                        # FIXME SI units
                         thickness.setAttribute("unit", "Meters")
-                        layer_thickness = ifc_material_layer.LayerThickness
+                        layer_thickness = (
+                            ifc_material_layer.LayerThickness * linear_unit_scale
+                        )
                         thickness.appendChild(
                             root.createTextNode((str(layer_thickness)))
                         )
                         material.appendChild(thickness)
 
                         r_value = root.createElement("R-value")
-                        # FIXME SI units
                         r_value.setAttribute("unit", "SquareMeterKPerW")
                         # NOTE silently sets a default r-value
                         r_value.appendChild(root.createTextNode("0.01"))
@@ -853,10 +896,14 @@ def create_gbxml(ifc_file):
                             "Analytical Properties(Type)",
                             prop="Heat Transfer Coefficient (U)",
                         )
-                        if pset_u_value and not pset_r_value:
-                            pset_r_value = layer_thickness / pset_u_value
                         if pset_r_value:
+                            if imperial_units:
+                                pset_r_value /= 5.678
                             r_value.firstChild.data = str(pset_r_value)
+                        elif pset_u_value:
+                            r_value.firstChild.data = str(
+                                layer_thickness / pset_u_value
+                            )
 
                         gbxml.appendChild(material)
 
@@ -897,6 +944,7 @@ def create_DocumentHistory(ifc_file, root):
 
     for ifc_person in ifc_file.by_type("IfcPerson"):
 
+        # FIXME IfcPerson may not be author
         created_by = root.createElement("CreatedBy")
         created_by.setAttribute(
             "personId",
