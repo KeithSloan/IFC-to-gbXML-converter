@@ -25,7 +25,7 @@ The converter expects that the IFC file has sufficient data, ie:
 * Each *Site* should have location attributes, ie. *RefLatitude*, *RefLongitude*, *RefElevation* and *SiteAddress*. *RefLatitude* **must** be correct.
 * Each *Building* should have a *BuildingAddress*.
 * *Spatial Elements* **must** be structured correctly, ie. a *Space* **must** be contained within a *Building Storey*, which **must** be contained within a *Building*, which **must** be contained within a *Site*.
-* Each *Space* **must** have *Qto_SpaceBaseQuantities/NetFloorArea* and *Qto_SpaceBaseQuantities/NetVolume* quantities.
+* Each *Space* **should** have *Qto_SpaceBaseQuantities/NetFloorArea* and *Qto_SpaceBaseQuantities/NetVolume* quantities.
 * Each *Space* **must** be bounded by *2nd Level* *Space Boundary* relationships.
 * Each *Space Boundary* **must** have a *Related Building Element*, planar *Connection Geometry*, and an *Internal Or External Boundary* attribute.
 * Each *Building Element* related to a *Space Boundary* must be a *Window* or a *Door*, or have a *Material Layer Set* construction (eg. a *Wall*, *Roof*, or a *Slab*).

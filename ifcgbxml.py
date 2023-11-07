@@ -280,7 +280,9 @@ def create_gbxml(ifc_file):
                 dict_id[fix_xml_stry(ifc_building_storey.GlobalId)] = building_storey
 
                 name = root.createElement("Name")
-                name.appendChild(root.createTextNode(ifc_building_storey.Name))
+                name.appendChild(
+                    root.createTextNode(ifc_building_storey.Name or "Unnamed")
+                )
                 building_storey.appendChild(name)
 
                 level = root.createElement("Level")
@@ -314,16 +316,6 @@ def create_gbxml(ifc_file):
                         fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
                     )
 
-                    area = root.createElement("Area")
-                    area.setAttribute("unit", "SquareMeters")
-                    area.appendChild(root.createTextNode("1.0"))
-                    space.appendChild(area)
-
-                    volume = root.createElement("Volume")
-                    volume.setAttribute("unit", "CubicMeters")
-                    volume.appendChild(root.createTextNode("1.0"))
-                    space.appendChild(volume)
-
                     pset_area = (
                         get_pset(
                             # IFC4
@@ -351,7 +343,12 @@ def create_gbxml(ifc_file):
                         )
                     )
                     if pset_area:
-                        area.firstChild.data = str(pset_area * area_unit_scale)
+                        area = root.createElement("Area")
+                        area.setAttribute("unit", "SquareMeters")
+                        area.appendChild(
+                            root.createTextNode(str(pset_area * area_unit_scale))
+                        )
+                        space.appendChild(area)
 
                     pset_volume = (
                         get_pset(
@@ -374,10 +371,15 @@ def create_gbxml(ifc_file):
                         )
                     )
                     if pset_volume:
-                        volume.firstChild.data = str(pset_volume * volume_unit_scale)
+                        volume = root.createElement("Volume")
+                        volume.setAttribute("unit", "CubicMeters")
+                        volume.appendChild(
+                            root.createTextNode(str(pset_volume * volume_unit_scale))
+                        )
+                        space.appendChild(volume)
 
                     name = root.createElement("Name")
-                    name.appendChild(root.createTextNode(ifc_space.Name))
+                    name.appendChild(root.createTextNode(ifc_space.Name or "Unnamed"))
                     space.appendChild(name)
 
                     # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
@@ -615,13 +617,17 @@ def create_gbxml(ifc_file):
 
             name = root.createElement("Name")
             name.appendChild(
-                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+                root.createTextNode(
+                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                )
             )
             opening.appendChild(name)
 
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
-                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+                root.createTextNode(
+                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                )
             )
             opening.appendChild(cad_object_id)
 
@@ -673,13 +679,17 @@ def create_gbxml(ifc_file):
 
             name = root.createElement("Name")
             name.appendChild(
-                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+                root.createTextNode(
+                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                )
             )
             window_type.appendChild(name)
 
             description = root.createElement("Description")
             description.appendChild(
-                root.createTextNode(fix_xml_name(ifc_building_element.Name))
+                root.createTextNode(
+                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                )
             )
             window_type.appendChild(description)
 
@@ -785,11 +795,11 @@ def create_gbxml(ifc_file):
                         )
             if ifc_material_layer_set:
                 ifc_id = str(ifc_material_layer_set.id())
-                construction_name = ifc_material_layer_set.LayerSetName
+                construction_name = ifc_material_layer_set.LayerSetName or "Unnamed"
             else:
                 # elements without a layer set may have u-value property
                 ifc_id = str(ifc_building_element.id())
-                construction_name = ifc_building_element.Name
+                construction_name = ifc_building_element.Name or "Unnamed"
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
             if ifc_id not in ifc_ids:
@@ -897,7 +907,9 @@ def create_gbxml(ifc_file):
                         dict_id["mat_%d" % ifc_material_layer_id] = material
 
                         name = root.createElement("Name")
-                        name.appendChild(root.createTextNode(ifc_material.Name))
+                        name.appendChild(
+                            root.createTextNode(ifc_material.Name or "Unnamed")
+                        )
                         material.appendChild(name)
 
                         thickness = root.createElement("Thickness")
@@ -909,12 +921,6 @@ def create_gbxml(ifc_file):
                             root.createTextNode((str(layer_thickness)))
                         )
                         material.appendChild(thickness)
-
-                        r_value = root.createElement("R-value")
-                        r_value.setAttribute("unit", "SquareMeterKPerW")
-                        # NOTE silently sets a default r-value
-                        r_value.appendChild(root.createTextNode("0.01"))
-                        material.appendChild(r_value)
 
                         pset_r_value = get_pset(
                             # IFC4
@@ -936,11 +942,15 @@ def create_gbxml(ifc_file):
                         if pset_r_value:
                             if imperial_units:
                                 pset_r_value /= 5.678
-                            r_value.firstChild.data = str(pset_r_value)
+                            r_value = root.createElement("R-value")
+                            r_value.setAttribute("unit", "SquareMeterKPerW")
+                            r_value.appendChild(str(pset_r_value))
+                            material.appendChild(r_value)
                         elif pset_u_value:
-                            r_value.firstChild.data = str(
-                                layer_thickness / pset_u_value
-                            )
+                            r_value = root.createElement("R-value")
+                            r_value.setAttribute("unit", "SquareMeterKPerW")
+                            r_value.appendChild(str(layer_thickness / pset_u_value))
+                            material.appendChild(r_value)
 
                         gbxml.appendChild(material)
 
