@@ -6,6 +6,7 @@ import numpy as np
 import datetime
 import time
 import sys
+import os
 from xml.dom import minidom
 
 get_pset = ifcopenshell.util.element.get_pset
@@ -89,7 +90,7 @@ def get_poly_loop(root, vertices, linear_unit_scale=1.0):
 # valid GUID chars: ^[0123][0-9a-zA-Z_$]{21}$
 # valid XML id chars: ^[a-zA-Z_][a-zA-Z0-9_.-]$
 
-# Align the gbXML input according to the predefined official gbXML schema
+
 def remove_unnecessary_characters(element):
     char_to_replace = {"$": "-", ":": "", " ": "_", "(": "", ")": ""}
     for key, value in char_to_replace.items():
@@ -135,14 +136,12 @@ def fix_xml_layer(element):
 
 
 def create_gbxml(ifc_file):
-    # Create the XML root by making use of MiniDom
+    """Process an IfcOpenShell file object and return a minidom document in gbXML format"""
     root = minidom.Document()
 
-    # Create the 'gbXML' element and append it to the Root of the document
     gbxml = root.createElement("gbXML")
     root.appendChild(gbxml)
 
-    # Create attributes for the 'gbXML' element
     gbxml.setAttribute("xmlns", "http://www.gbxml.org/schema")
     gbxml.setAttribute("temperatureUnit", "C")
     gbxml.setAttribute("lengthUnit", "Meters")
@@ -173,7 +172,7 @@ def create_gbxml(ifc_file):
             volume_unit.Prefix
         )
 
-    # crude check for imperial units
+    # NOTE crude check for imperial units
     imperial_units = False
     if ifcopenshell.util.unit.get_project_unit(ifc_file, "LENGTHUNIT").Name in [
         "inch",
@@ -310,7 +309,6 @@ def create_gbxml(ifc_file):
 
                     dict_id[fix_xml_spc(ifc_space.GlobalId)] = space
 
-                    # Refer to the relating 'BuildingStorey' GUID by iterating through IFC entities
                     space.setAttribute(
                         "buildingStoreyIdRef",
                         fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
@@ -389,6 +387,19 @@ def create_gbxml(ifc_file):
                         # Make sure a 'SpaceBoundary' is representing an actual element
                         if ifc_rel_space_boundary.RelatedBuildingElement == None:
                             continue
+                        if (
+                            ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement
+                            == None
+                        ):
+                            continue
+                        # require 2nd Level boundaries
+                        if not (
+                            ifc_rel_space_boundary.Name == "2ndLevel"
+                            or ifc_rel_space_boundary.is_a(
+                                "IfcRelSpaceBoundary2ndLevel"
+                            )
+                        ):
+                            continue
 
                         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
@@ -404,7 +415,6 @@ def create_gbxml(ifc_file):
                             space_boundary = root.createElement("SpaceBoundary")
                             space_boundary.setAttribute("isSecondLevelBoundary", "true")
 
-                            # Refer to the relating 'SpaceBoundary' GUID by iterating through IFC entities
                             space_boundary.setAttribute(
                                 "surfaceIdRef",
                                 fix_xml_id(ifc_rel_space_boundary.GlobalId),
@@ -434,8 +444,13 @@ def create_gbxml(ifc_file):
             continue
         if ifc_rel_space_boundary.RelatingSpace == None:
             continue
+        # require 2nd Level boundaries
+        if not (
+            ifc_rel_space_boundary.Name == "2ndLevel"
+            or ifc_rel_space_boundary.is_a("IfcRelSpaceBoundary2ndLevel")
+        ):
+            continue
 
-        # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
         # Specify each 'Surface' element and set 'SurfaceType' attributes
@@ -451,24 +466,46 @@ def create_gbxml(ifc_file):
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
 
-            if ifc_building_element.is_a("IfcCovering"):
+            if (
+                hasattr(ifc_building_element, "IsTypedBy")
+                and ifc_building_element.IsTypedBy
+            ):
+                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+
+            if ifc_building_element.is_a("IfcCovering") or ifc_building_element.is_a(
+                "IfcCoveringType"
+            ):
+                # NOTE assumes all coverings with a related space boundary are ceilings
                 surface.setAttribute("surfaceType", "Ceiling")
 
-            if ifc_building_element.is_a("IfcRoof"):
+            if ifc_building_element.is_a("IfcRoof") or ifc_building_element.is_a(
+                "IfcRoofType"
+            ):
                 surface.setAttribute("surfaceType", "Roof")
                 surface.setAttribute("exposedToSun", "true")
 
-            if ifc_building_element.is_a("IfcSlab"):
+            if ifc_building_element.is_a("IfcSlab") or ifc_building_element.is_a(
+                "IfcSlabType"
+            ):
                 if (
                     ifc_rel_space_boundary.InternalOrExternalBoundary
                     == "EXTERNAL_EARTH"
+                ) or get_pset(
+                    ifc_building_element, "Pset_SlabCommon", prop="IsExternal"
                 ):
                     surface.setAttribute("surfaceType", "SlabOnGrade")
                 else:
                     surface.setAttribute("surfaceType", "InteriorFloor")
 
-            if ifc_building_element.is_a("IfcWall"):
-                if ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL":
+            if ifc_building_element.is_a("IfcWall") or ifc_building_element.is_a(
+                "IfcWallType"
+            ):
+                if (
+                    ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL"
+                    or get_pset(
+                        ifc_building_element, "Pset_WallCommon", prop="IsExternal"
+                    )
+                ):
                     surface.setAttribute("surfaceType", "ExteriorWall")
                     surface.setAttribute("exposedToSun", "true")
                 elif (
@@ -480,12 +517,7 @@ def create_gbxml(ifc_file):
                     surface.setAttribute("surfaceType", "InteriorWall")
                     surface.setAttribute("exposedToSun", "false")
 
-            if (
-                hasattr(ifc_building_element, "IsTypedBy")
-                and ifc_building_element.IsTypedBy
-            ):
-                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
-
+            ifc_material_layer_set = None
             for association in ifc_building_element.HasAssociations:
                 if association.is_a("IfcRelAssociatesMaterial"):
                     if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
@@ -499,6 +531,12 @@ def create_gbxml(ifc_file):
                         "constructionIdRef",
                         fix_xml_cons(str(ifc_material_layer_set.id())),
                     )
+            if not ifc_material_layer_set:
+                # elements without a layer set may have u-value property
+                surface.setAttribute(
+                    "constructionIdRef",
+                    fix_xml_cons(str(ifc_building_element.id())),
+                )
 
             name = root.createElement("Name")
             name.appendChild(
@@ -509,7 +547,6 @@ def create_gbxml(ifc_file):
 
             adjacent_space_id = root.createElement("AdjacentSpaceId")
 
-            # Refer to the relating 'Space' GUID by iterating through IFC entities
             adjacent_space_id.setAttribute(
                 "spaceIdRef", fix_xml_spc(ifc_rel_space_boundary.RelatingSpace.GlobalId)
             )
@@ -539,10 +576,7 @@ def create_gbxml(ifc_file):
             continue
         if ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement == None:
             continue
-        if ifc_rel_space_boundary.RelatingSpace == None:
-            continue
 
-        # Specify the 'IfcCurveBoundedPlane' entity which represents the geometry
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
         if ifc_building_element.is_a() in [
@@ -559,7 +593,6 @@ def create_gbxml(ifc_file):
             opening = root.createElement("Opening")
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = opening
 
-            # Refer to the relating 'IfcWindow' GUID by iterating through IFC entities
             opening.setAttribute(
                 "windowTypeIdRef",
                 fix_xml_id(ifc_building_element.GlobalId),
@@ -592,6 +625,7 @@ def create_gbxml(ifc_file):
             )
             opening.appendChild(cad_object_id)
 
+            ifc_parent_boundary = None
             if hasattr(ifc_rel_space_boundary, "ParentBoundary"):
                 # IFC4
                 ifc_parent_boundary = ifc_rel_space_boundary.ParentBoundary
@@ -608,9 +642,13 @@ def create_gbxml(ifc_file):
                     ):
                         ifc_parent_boundary = ifc_boundary
 
-            if fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id:
+            if (
+                ifc_parent_boundary
+                and fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id
+            ):
                 surface = dict_id[fix_xml_id(ifc_parent_boundary.GlobalId)]
                 surface.appendChild(opening)
+            # FIXME allow Windows that are not parented to walls by creating a dummy parent Surface
 
     ifc_building_element_guids = []
     # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
@@ -644,8 +682,6 @@ def create_gbxml(ifc_file):
                 root.createTextNode(fix_xml_name(ifc_building_element.Name))
             )
             window_type.appendChild(description)
-
-            # Specify analytical properties of the 'IfcWindow' by iterating through IFC entities
 
             u_value = root.createElement("U-value")
             u_value.setAttribute("unit", "WPerSquareMeterK")
@@ -747,10 +783,13 @@ def create_gbxml(ifc_file):
                         ifc_material_layer_set = (
                             association.RelatingMaterial.ForLayerSet
                         )
-            if not ifc_material_layer_set:
-                continue
-
-            ifc_id = str(ifc_material_layer_set.id())
+            if ifc_material_layer_set:
+                ifc_id = str(ifc_material_layer_set.id())
+                construction_name = ifc_material_layer_set.LayerSetName
+            else:
+                # elements without a layer set may have u-value property
+                ifc_id = str(ifc_building_element.id())
+                construction_name = ifc_building_element.Name
 
             # Make use of a list to make sure no same 'Construction' elements are added twice
             if ifc_id not in ifc_ids:
@@ -759,8 +798,6 @@ def create_gbxml(ifc_file):
                 construction = root.createElement("Construction")
                 construction.setAttribute("id", fix_xml_cons(ifc_id))
                 dict_id[fix_xml_cons(ifc_id)] = construction
-
-                # Specify analytical properties of the 'Construction' element by iterating through IFC entities
 
                 pset_u_value = (
                     get_pset(
@@ -820,18 +857,18 @@ def create_gbxml(ifc_file):
                 layer_id.setAttribute("layerIdRef", fix_xml_layer(ifc_id))
                 construction.appendChild(layer_id)
 
-                # Refer to the relating 'IfcMaterialLayerSet' name by iterating through IFC entities
                 name = root.createElement("Name")
-                name.appendChild(
-                    root.createTextNode(ifc_material_layer_set.LayerSetName)
-                )
+                name.appendChild(root.createTextNode(construction_name))
                 construction.appendChild(name)
 
                 gbxml.appendChild(construction)
 
+                if not ifc_material_layer_set:
+                    # elements without a layer set may have u-value property
+                    continue
+
                 # NOTE the 'Layer' element of the gbXML schema is not a layer, it is a
                 # collection of layers, ie. a layer set
-
                 layer = root.createElement("Layer")
                 layer.setAttribute("id", fix_xml_layer(ifc_id))
                 dict_id[fix_xml_layer(ifc_id)] = layer
@@ -914,71 +951,29 @@ def create_gbxml(ifc_file):
 def create_DocumentHistory(ifc_file, root):
     """Specify the 'DocumentHistory' element of the gbXML schema; making use of IFC entity 'IfcApplication' and 'IfcPerson'"""
     document_history = root.createElement("DocumentHistory")
-    for ifc_application in ifc_file.by_type("IfcApplication"):
 
-        program_info = root.createElement("ProgramInfo")
-        program_info.setAttribute("id", ifc_application.ApplicationIdentifier)
+    program_info = root.createElement("ProgramInfo")
+    program_info.setAttribute("id", "IFC_gbXML_Convert")
+    document_history.appendChild(program_info)
 
-        company_name = root.createElement("CompanyName")
-        company_name.appendChild(
-            root.createTextNode(ifc_application.ApplicationDeveloper.Name)
-        )
-        program_info.appendChild(company_name)
+    person_info = root.createElement("PersonInfo")
+    person_info.setAttribute("id", remove_unnecessary_characters(os.getlogin()))
+    document_history.appendChild(person_info)
 
-        product_name = root.createElement("ProductName")
-        product_name.appendChild(
-            root.createTextNode(ifc_application.ApplicationFullName)
-        )
-        program_info.appendChild(product_name)
-
-        version = root.createElement("Version")
-        version.appendChild(root.createTextNode(ifc_application.Version))
-        program_info.appendChild(version)
-
-        document_history.appendChild(program_info)
-
-    if not ifc_file.by_type("IfcApplication"):
-        program_info = root.createElement("ProgramInfo")
-        program_info.setAttribute("id", "IFC_gbXML_Convert")
-        document_history.appendChild(program_info)
-
-    for ifc_person in ifc_file.by_type("IfcPerson"):
-
-        # FIXME IfcPerson may not be author
-        created_by = root.createElement("CreatedBy")
-        created_by.setAttribute(
-            "personId",
-            remove_unnecessary_characters(
-                str(ifc_person.GivenName) + "_" + str(ifc_person.FamilyName)
-            ),
-        )
-        for ifc_application in ifc_file.by_type("IfcApplication"):
-            created_by.setAttribute("programId", ifc_application.ApplicationIdentifier)
-        if not ifc_file.by_type("IfcApplication"):
-            created_by.setAttribute("programId", "IFC_gbXML_Convert")
-        today = datetime.date.today()
-        created_by.setAttribute(
-            "date", today.strftime("%Y-%m-%dT") + time.strftime("%H:%M:%S")
-        )
-
-        document_history.appendChild(created_by)
-
-        person_info = root.createElement("PersonInfo")
-        person_info.setAttribute(
-            "id",
-            remove_unnecessary_characters(
-                str(ifc_person.GivenName) + "_" + str(ifc_person.FamilyName)
-            ),
-        )
-
-        document_history.appendChild(person_info)
+    created_by = root.createElement("CreatedBy")
+    created_by.setAttribute("personId", remove_unnecessary_characters(os.getlogin()))
+    created_by.setAttribute("programId", "IFC_gbXML_Convert")
+    today = datetime.date.today()
+    created_by.setAttribute(
+        "date", today.strftime("%Y-%m-%dT") + time.strftime("%H:%M:%S")
+    )
+    document_history.appendChild(created_by)
 
     return document_history
 
 
 # import blenderbim.tool
-# ifc_file = blenderbim.tool.Ifc.get()
-# root = create_gbxml(ifc_file)
+# root = create_gbxml(blenderbim.tool.Ifc.get())
 # root.writexml(open("temp.xml", "w"), indent="  ", addindent="  ", newl="\n")
 
 if __name__ == "__main__":
