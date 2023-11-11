@@ -944,12 +944,12 @@ def create_gbxml(ifc_file):
                                 pset_r_value /= 5.678
                             r_value = root.createElement("R-value")
                             r_value.setAttribute("unit", "SquareMeterKPerW")
-                            r_value.appendChild(str(pset_r_value))
+                            r_value.appendChild(root.createTextNode(str(pset_r_value)))
                             material.appendChild(r_value)
                         elif pset_u_value:
                             r_value = root.createElement("R-value")
                             r_value.setAttribute("unit", "SquareMeterKPerW")
-                            r_value.appendChild(str(layer_thickness / pset_u_value))
+                            r_value.appendChild(root.createTextNode(str(layer_thickness / pset_u_value)))
                             material.appendChild(r_value)
 
                         gbxml.appendChild(material)
