@@ -135,6 +135,22 @@ def fix_xml_layer(element):
     return "layer_" + element.replace("$", "-")
 
 
+def is_a_boundary_element(ifc_building_element):
+    for ifc_class in [
+        "IfcWall",
+        # "IfcColumn",
+        # "IfcMember",
+        # "IfcVirtualElement",
+        # "IfcPlate",
+        "IfcSlab",
+        "IfcRoof",
+        "IfcCovering",
+    ]:
+        if ifc_building_element.is_a(ifc_class):
+            return True
+    return False
+
+
 def create_gbxml(ifc_file):
     """Process an IfcOpenShell file object and return a minidom document in gbXML format"""
     root = minidom.Document()
@@ -405,14 +421,12 @@ def create_gbxml(ifc_file):
 
                         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
+                        ifc_building_element = (
+                            ifc_rel_space_boundary.RelatedBuildingElement
+                        )
+
                         # Create 'SpaceBoundary' elements for the following building elements
-                        if ifc_rel_space_boundary.RelatedBuildingElement.is_a() in [
-                            "IfcWall",
-                            "IfcWallStandardCase",
-                            "IfcSlab",
-                            "IfcRoof",
-                            "IfcCovering",
-                        ]:
+                        if is_a_boundary_element(ifc_building_element):
 
                             space_boundary = root.createElement("SpaceBoundary")
                             space_boundary.setAttribute("isSecondLevelBoundary", "true")
@@ -456,13 +470,7 @@ def create_gbxml(ifc_file):
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
 
         # Specify each 'Surface' element and set 'SurfaceType' attributes
-        if ifc_building_element.is_a() in [
-            "IfcWall",
-            "IfcWallStandardCase",
-            "IfcSlab",
-            "IfcRoof",
-            "IfcCovering",
-        ]:
+        if is_a_boundary_element(ifc_building_element):
 
             surface = root.createElement("Surface")
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
@@ -473,6 +481,8 @@ def create_gbxml(ifc_file):
                 and ifc_building_element.IsTypedBy
             ):
                 ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+
+            # FIXME iterate though all Pset_*Common/IsExternal and use this for InternalOrExternalBoundary
 
             if ifc_building_element.is_a("IfcCovering") or ifc_building_element.is_a(
                 "IfcCoveringType"
@@ -718,6 +728,7 @@ def create_gbxml(ifc_file):
             solar_heat_gain_coeff.setAttribute("unit", "Fraction")
             solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
 
+            # FIXME set default, IFC4?
             pset_solar_heat = get_pset(
                 # IFC2X3
                 ifc_building_element,
@@ -770,14 +781,7 @@ def create_gbxml(ifc_file):
         if ifc_building_element is None:
             continue
 
-        if ifc_building_element.is_a() in [
-            "IfcWall",
-            "IfcWallStandardCase",
-            "IfcSlab",
-            "IfcRoof",
-            "IfcCovering",
-        ]:
-
+        if is_a_boundary_element(ifc_building_element):
             if (
                 hasattr(ifc_building_element, "IsTypedBy")
                 and ifc_building_element.IsTypedBy
@@ -949,7 +953,9 @@ def create_gbxml(ifc_file):
                         elif pset_u_value:
                             r_value = root.createElement("R-value")
                             r_value.setAttribute("unit", "SquareMeterKPerW")
-                            r_value.appendChild(root.createTextNode(str(layer_thickness / pset_u_value)))
+                            r_value.appendChild(
+                                root.createTextNode(str(layer_thickness / pset_u_value))
+                            )
                             material.appendChild(r_value)
 
                         gbxml.appendChild(material)
