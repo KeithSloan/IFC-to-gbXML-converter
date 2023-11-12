@@ -181,7 +181,7 @@ def get_parent_boundary(ifc_rel_space_boundary):
         return ifc_rel_space_boundary.ParentBoundary
     elif (
         ifc_building_element.FillsVoids
-        and ifc_building_element.FillsVoids.RelatingOpeningElement.VoidsElements
+        and ifc_building_element.FillsVoids[0].RelatingOpeningElement.VoidsElements
     ):
         # IFC2X3
         for ifc_boundary in (
@@ -769,6 +769,7 @@ def create_gbxml(ifc_file):
             transmittance = root.createElement("Transmittance")
             transmittance.setAttribute("unit", "Fraction")
             transmittance.setAttribute("type", "Visible")
+            transmittance.setAttribute("surfaceType", "Both")
             transmittance.appendChild(root.createTextNode("1.0"))
 
             pset_transmittance = (
