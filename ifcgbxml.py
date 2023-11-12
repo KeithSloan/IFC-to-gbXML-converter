@@ -87,11 +87,9 @@ def get_poly_loop(root, vertices, linear_unit_scale=1.0):
     return poly_loop
 
 
-# valid GUID chars: ^[0123][0-9a-zA-Z_$]{21}$
-# valid XML id chars: ^[a-zA-Z_][a-zA-Z0-9_.-]$
-
-
 def remove_unnecessary_characters(element):
+    # valid GUID chars: ^[0123][0-9a-zA-Z_$]{21}$
+    # valid XML id chars: ^[a-zA-Z_][a-zA-Z0-9_.-]$
     char_to_replace = {"$": "-", ":": "", " ": "_", "(": "", ")": ""}
     for key, value in char_to_replace.items():
         element = element.replace(key, value)
@@ -205,6 +203,12 @@ def get_material_layer_set(ifc_building_element):
                 return association.RelatingMaterial
             elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
                 return association.RelatingMaterial.ForLayerSet
+
+
+def get_element_or_type(ifc_building_element):
+    if hasattr(ifc_building_element, "IsTypedBy") and ifc_building_element.IsTypedBy:
+        return ifc_building_element.IsTypedBy[0].RelatingType
+    return ifc_building_element
 
 
 def create_gbxml(ifc_file):
@@ -537,11 +541,7 @@ def create_gbxml(ifc_file):
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
 
-            if (
-                hasattr(ifc_building_element, "IsTypedBy")
-                and ifc_building_element.IsTypedBy
-            ):
-                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+            ifc_building_element = get_element_or_type(ifc_building_element)
 
             # Valid surfaceType:
             # InteriorWall, ExteriorWall, Roof, InteriorFloor, ExposedFloor,
@@ -680,11 +680,7 @@ def create_gbxml(ifc_file):
             if not ifc_parent_boundary:
                 continue
 
-            if (
-                hasattr(ifc_building_element, "IsTypedBy")
-                and ifc_building_element.IsTypedBy
-            ):
-                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+            ifc_building_element = get_element_or_type(ifc_building_element)
 
             opening = root.createElement("Opening")
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = opening
@@ -736,11 +732,7 @@ def create_gbxml(ifc_file):
         "IfcDoor"
     ):
 
-        if (
-            hasattr(ifc_building_element, "IsTypedBy")
-            and ifc_building_element.IsTypedBy
-        ):
-            ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
+        ifc_building_element = get_element_or_type(ifc_building_element)
 
         ifc_building_element_guid = ifc_building_element.GlobalId
         if ifc_building_element_guid not in ifc_building_element_guids:
@@ -838,12 +830,7 @@ def create_gbxml(ifc_file):
             continue
 
         if is_a_boundary_element(ifc_building_element):
-            if (
-                hasattr(ifc_building_element, "IsTypedBy")
-                and ifc_building_element.IsTypedBy
-            ):
-                ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
-
+            ifc_building_element = get_element_or_type(ifc_building_element)
             ifc_material_layer_set = get_material_layer_set(ifc_building_element)
 
             if ifc_material_layer_set:
