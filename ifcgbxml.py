@@ -163,6 +163,22 @@ def is_external(ifc_building_element):
     return False
 
 
+def get_thermal_transmittance(ifc_building_element):
+    psets = ifcopenshell.util.element.get_psets(
+        ifc_building_element, psets_only=True, should_inherit=True
+    )
+    for pset in psets:
+        for prop in psets[pset]:
+            if prop == "ThermalTransmittance":
+                return psets[pset][prop]
+    return get_pset(
+        # IFC2X3
+        ifc_building_element,
+        "Analytical Properties(Type)",
+        prop="Heat Transfer Coefficient (U)",
+    )
+
+
 def create_gbxml(ifc_file):
     """Process an IfcOpenShell file object and return a minidom document in gbXML format"""
     root = minidom.Document()
@@ -742,17 +758,8 @@ def create_gbxml(ifc_file):
             u_value.setAttribute("unit", "WPerSquareMeterK")
             u_value.appendChild(root.createTextNode("10.0"))
 
-            pset_u_value = get_pset(
-                # IFC4
-                ifc_building_element,
-                "Pset_DoorCommon",
-                prop="ThermalTransmittance",
-            ) or get_pset(
-                # IFC4
-                ifc_building_element,
-                "Pset_WindowCommon",
-                prop="ThermalTransmittance",
-            )
+            pset_u_value = get_thermal_transmittance(ifc_building_element)
+
             if pset_u_value:
                 if imperial_units:
                     pset_u_value *= 5.678
@@ -848,38 +855,8 @@ def create_gbxml(ifc_file):
                 construction.setAttribute("id", fix_xml_cons(ifc_id))
                 dict_id[fix_xml_cons(ifc_id)] = construction
 
-                pset_u_value = (
-                    get_pset(
-                        # IFC4
-                        ifc_building_element,
-                        "Pset_WallCommon",
-                        prop="ThermalTransmittance",
-                    )
-                    or get_pset(
-                        # IFC4
-                        ifc_building_element,
-                        "Pset_SlabCommon",
-                        prop="ThermalTransmittance",
-                    )
-                    or get_pset(
-                        # IFC4
-                        ifc_building_element,
-                        "Pset_RoofCommon",
-                        prop="ThermalTransmittance",
-                    )
-                    or get_pset(
-                        # IFC4
-                        ifc_building_element,
-                        "Pset_CoveringCommon",
-                        prop="ThermalTransmittance",
-                    )
-                    or get_pset(
-                        # IFC2X3
-                        ifc_building_element,
-                        "Analytical Properties(Type)",
-                        prop="Heat Transfer Coefficient (U)",
-                    )
-                )
+                pset_u_value = get_thermal_transmittance(ifc_building_element)
+
                 if pset_u_value:
                     # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
                     u_value = root.createElement("U-value")
