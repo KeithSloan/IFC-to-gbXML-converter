@@ -161,21 +161,17 @@ def is_external(ifc_building_element):
     return False
 
 
-def get_thermal_transmittance(ifc_building_element):
+def get_u_value(ifc_building_element):
     psets = ifcopenshell.util.element.get_psets(
         ifc_building_element, psets_only=True, should_inherit=True
     )
     for pset in psets:
         for prop in psets[pset]:
-            if prop == "ThermalTransmittance":
+            if (
+                prop == "ThermalTransmittance"
+                or prop == "Heat Transfer Coefficient (U)"
+            ):
                 return psets[pset][prop]
-    return get_pset(
-        # IFC2X3
-        ifc_building_element,
-        "Analytical Properties(Type)",
-        prop="Heat Transfer Coefficient (U)",
-        should_inherit=True,
-    )
 
 
 def get_parent_boundary(ifc_rel_space_boundary):
@@ -747,7 +743,7 @@ def create_gbxml(ifc_file):
             u_value.setAttribute("unit", "WPerSquareMeterK")
             u_value.appendChild(root.createTextNode("10.0"))
 
-            pset_u_value = get_thermal_transmittance(ifc_building_element)
+            pset_u_value = get_u_value(ifc_building_element)
 
             if pset_u_value:
                 if imperial_units:
@@ -834,7 +830,7 @@ def create_gbxml(ifc_file):
                 construction.setAttribute("id", fix_xml_cons(ifc_id))
                 dict_id[fix_xml_cons(ifc_id)] = construction
 
-                pset_u_value = get_thermal_transmittance(ifc_building_element)
+                pset_u_value = get_u_value(ifc_building_element)
 
                 if pset_u_value:
                     # Building Element could have an overall u-value property rather than layers with thicknesses/r-values
