@@ -143,7 +143,7 @@ def is_a_boundary_element(ifc_building_element):
         "IfcVirtualElement",
         "IfcPlate",
         "IfcCurtainWall",
-        # "IfcWindow",
+        "IfcWindow",
         "IfcSlab",
         "IfcRoof",
         "IfcCovering",
@@ -177,6 +177,25 @@ def get_thermal_transmittance(ifc_building_element):
         "Analytical Properties(Type)",
         prop="Heat Transfer Coefficient (U)",
     )
+
+
+def get_parent_boundary(ifc_rel_space_boundary):
+    ifc_building_element = ifc_rel_space_boundary.RelatedBuildingElement
+    if hasattr(ifc_rel_space_boundary, "ParentBoundary"):
+        # IFC4
+        return ifc_rel_space_boundary.ParentBoundary
+    elif (
+        ifc_building_element.FillsVoids
+        and ifc_building_element.FillsVoids.RelatingOpeningElement.VoidsElements
+    ):
+        # IFC2X3
+        for ifc_boundary in (
+            ifc_building_element.FillsVoids[0]
+            .RelatingOpeningElement.VoidsElements[0]
+            .RelatingBuildingElement.ProvidesBoundaries
+        ):
+            if ifc_boundary.RelatingSpace == ifc_rel_space_boundary.RelatingSpace:
+                return ifc_boundary
 
 
 def create_gbxml(ifc_file):
@@ -430,6 +449,9 @@ def create_gbxml(ifc_file):
                     # This new element is added as child to the earlier created 'Space' element
                     for ifc_rel_space_boundary in ifc_space.BoundedBy:
 
+                        if get_parent_boundary(ifc_rel_space_boundary):
+                            continue
+
                         # Make sure a 'SpaceBoundary' is representing an actual element
                         if ifc_rel_space_boundary.RelatedBuildingElement == None:
                             continue
@@ -493,6 +515,8 @@ def create_gbxml(ifc_file):
             ifc_rel_space_boundary.Name == "2ndLevel"
             or ifc_rel_space_boundary.is_a("IfcRelSpaceBoundary2ndLevel")
         ):
+            continue
+        if get_parent_boundary(ifc_rel_space_boundary):
             continue
 
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
@@ -630,6 +654,8 @@ def create_gbxml(ifc_file):
 
             campus.appendChild(surface)
 
+    # Specify the 'Opening' element of the gbXML schema; Windows and Doors
+    # This new element is added as child to an earlier created 'Surface' element
     opening_id = 1
     for ifc_rel_space_boundary in ifc_file.by_type("IfcRelSpaceBoundary"):
 
@@ -646,6 +672,11 @@ def create_gbxml(ifc_file):
             "IfcWindow",
             "IfcDoor",
         ]:
+
+            ifc_parent_boundary = get_parent_boundary(ifc_rel_space_boundary)
+
+            if not ifc_parent_boundary:
+                continue
 
             if (
                 hasattr(ifc_building_element, "IsTypedBy")
@@ -692,30 +723,9 @@ def create_gbxml(ifc_file):
             )
             opening.appendChild(cad_object_id)
 
-            ifc_parent_boundary = None
-            if hasattr(ifc_rel_space_boundary, "ParentBoundary"):
-                # IFC4
-                ifc_parent_boundary = ifc_rel_space_boundary.ParentBoundary
-            else:
-                # IFC2X3
-                for ifc_boundary in (
-                    ifc_building_element.FillsVoids[0]
-                    .RelatingOpeningElement.VoidsElements[0]
-                    .RelatingBuildingElement.ProvidesBoundaries
-                ):
-                    if (
-                        ifc_boundary.RelatingSpace
-                        == ifc_rel_space_boundary.RelatingSpace
-                    ):
-                        ifc_parent_boundary = ifc_boundary
-
-            if (
-                ifc_parent_boundary
-                and fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id
-            ):
+            if fix_xml_id(ifc_parent_boundary.GlobalId) in dict_id:
                 surface = dict_id[fix_xml_id(ifc_parent_boundary.GlobalId)]
                 surface.appendChild(opening)
-            # FIXME allow Windows that are not parented to walls by creating a dummy parent Surface
 
     ifc_building_element_guids = []
     # Specify the 'WindowType' element of the gbXML schema; making use of IFC entity 'IfcWindow'
@@ -821,6 +831,8 @@ def create_gbxml(ifc_file):
         # Make sure a 'SpaceBoundary' is representing an actual element
         ifc_building_element = ifc_rel_space_boundary.RelatedBuildingElement
         if ifc_building_element is None:
+            continue
+        if get_parent_boundary(ifc_rel_space_boundary):
             continue
 
         if is_a_boundary_element(ifc_building_element):
