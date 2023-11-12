@@ -198,6 +198,15 @@ def get_parent_boundary(ifc_rel_space_boundary):
                 return ifc_boundary
 
 
+def get_material_layer_set(ifc_building_element):
+    for association in ifc_building_element.HasAssociations:
+        if association.is_a("IfcRelAssociatesMaterial"):
+            if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
+                return association.RelatingMaterial
+            elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
+                return association.RelatingMaterial.ForLayerSet
+
+
 def create_gbxml(ifc_file):
     """Process an IfcOpenShell file object and return a minidom document in gbXML format"""
     root = minidom.Document()
@@ -604,21 +613,14 @@ def create_gbxml(ifc_file):
                 if is_external(ifc_building_element):
                     surface.setAttribute("exposedToSun", "true")
 
-            ifc_material_layer_set = None
-            for association in ifc_building_element.HasAssociations:
-                if association.is_a("IfcRelAssociatesMaterial"):
-                    if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
-                        ifc_material_layer_set = association.RelatingMaterial
-                    elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
-                        ifc_material_layer_set = (
-                            association.RelatingMaterial.ForLayerSet
-                        )
+            ifc_material_layer_set = get_material_layer_set(ifc_building_element)
 
-                    surface.setAttribute(
-                        "constructionIdRef",
-                        fix_xml_cons(str(ifc_material_layer_set.id())),
-                    )
-            if not ifc_material_layer_set:
+            if ifc_material_layer_set:
+                surface.setAttribute(
+                    "constructionIdRef",
+                    fix_xml_cons(str(ifc_material_layer_set.id())),
+                )
+            else:
                 # elements without a layer set may have u-value property
                 surface.setAttribute(
                     "constructionIdRef",
@@ -842,15 +844,8 @@ def create_gbxml(ifc_file):
             ):
                 ifc_building_element = ifc_building_element.IsTypedBy[0].RelatingType
 
-            ifc_material_layer_set = None
-            for association in ifc_building_element.HasAssociations:
-                if association.is_a("IfcRelAssociatesMaterial"):
-                    if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
-                        ifc_material_layer_set = association.RelatingMaterial
-                    elif association.RelatingMaterial.is_a("IfcMaterialLayerSetUsage"):
-                        ifc_material_layer_set = (
-                            association.RelatingMaterial.ForLayerSet
-                        )
+            ifc_material_layer_set = get_material_layer_set(ifc_building_element)
+
             if ifc_material_layer_set:
                 ifc_id = str(ifc_material_layer_set.id())
                 construction_name = ifc_material_layer_set.LayerSetName or "Unnamed"
