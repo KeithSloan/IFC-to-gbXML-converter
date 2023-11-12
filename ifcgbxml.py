@@ -156,7 +156,7 @@ def is_external(ifc_building_element):
         ifc_building_element, psets_only=True, should_inherit=True
     )
     for pset in psets:
-        if "IsExternal" in psets[pset]:
+        if "IsExternal" in psets[pset] and psets[pset]["IsExternal"]:
             return True
     return False
 
@@ -174,6 +174,7 @@ def get_thermal_transmittance(ifc_building_element):
         ifc_building_element,
         "Analytical Properties(Type)",
         prop="Heat Transfer Coefficient (U)",
+        should_inherit=True,
     )
 
 
@@ -197,6 +198,7 @@ def get_parent_boundary(ifc_rel_space_boundary):
 
 
 def get_material_layer_set(ifc_building_element):
+    ifc_building_element = get_element_or_type(ifc_building_element)
     for association in ifc_building_element.HasAssociations:
         if association.is_a("IfcRelAssociatesMaterial"):
             if association.RelatingMaterial.is_a("IfcMaterialLayerSet"):
@@ -541,52 +543,36 @@ def create_gbxml(ifc_file):
             surface.setAttribute("id", fix_xml_id(ifc_rel_space_boundary.GlobalId))
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = surface
 
-            ifc_building_element = get_element_or_type(ifc_building_element)
-
             # Valid surfaceType:
             # InteriorWall, ExteriorWall, Roof, InteriorFloor, ExposedFloor,
             # Shade, UndergroundWall, UndergroundSlab, Ceiling, Air,
             # UndergroundCeiling, RaisedFloor, SlabOnGrade, FreestandingColumn,
             # EmbeddedColumn, Undefined
 
-            if ifc_building_element.is_a("IfcCovering") or ifc_building_element.is_a(
-                "IfcCoveringType"
-            ):
+            if ifc_building_element.is_a("IfcCovering"):
                 # NOTE assumes all coverings with a related space boundary are ceilings
                 surface.setAttribute("surfaceType", "Ceiling")
 
-            elif ifc_building_element.is_a("IfcRoof") or ifc_building_element.is_a(
-                "IfcRoofType"
-            ):
+            elif ifc_building_element.is_a("IfcRoof"):
                 surface.setAttribute("surfaceType", "Roof")
                 surface.setAttribute("exposedToSun", "true")
 
-            elif ifc_building_element.is_a("IfcColumn") or ifc_building_element.is_a(
-                "IfcColumnType"
-            ):
+            elif ifc_building_element.is_a("IfcColumn"):
                 surface.setAttribute("surfaceType", "EmbeddedColumn")
 
-            elif ifc_building_element.is_a("IfcSlab") or ifc_building_element.is_a(
-                "IfcSlabType"
-            ):
+            elif ifc_building_element.is_a("IfcSlab"):
                 if (
                     ifc_rel_space_boundary.InternalOrExternalBoundary
                     == "EXTERNAL_EARTH"
-                ) or get_pset(
-                    ifc_building_element, "Pset_SlabCommon", prop="IsExternal"
-                ):
+                ) or is_external(ifc_building_element):
                     surface.setAttribute("surfaceType", "SlabOnGrade")
                 else:
                     surface.setAttribute("surfaceType", "InteriorFloor")
 
-            elif ifc_building_element.is_a("IfcWall") or ifc_building_element.is_a(
-                "IfcWallType"
-            ):
+            elif ifc_building_element.is_a("IfcWall"):
                 if (
                     ifc_rel_space_boundary.InternalOrExternalBoundary == "EXTERNAL"
-                    or get_pset(
-                        ifc_building_element, "Pset_WallCommon", prop="IsExternal"
-                    )
+                    or is_external(ifc_building_element)
                 ):
                     surface.setAttribute("surfaceType", "ExteriorWall")
                     surface.setAttribute("exposedToSun", "true")
@@ -599,9 +585,7 @@ def create_gbxml(ifc_file):
                     surface.setAttribute("surfaceType", "InteriorWall")
                     surface.setAttribute("exposedToSun", "false")
 
-            elif ifc_building_element.is_a(
-                "IfcCurtainWall"
-            ) or ifc_building_element.is_a("IfcCurtainWallType"):
+            elif ifc_building_element.is_a("IfcCurtainWall"):
                 surface.setAttribute("surfaceType", "ExteriorWall")
                 surface.setAttribute("exposedToSun", "true")
 
@@ -622,9 +606,10 @@ def create_gbxml(ifc_file):
                 )
             else:
                 # elements without a layer set may have u-value property
+                ifc_building_element_type = get_element_or_type(ifc_building_element)
                 surface.setAttribute(
                     "constructionIdRef",
-                    fix_xml_cons(str(ifc_building_element.id())),
+                    fix_xml_cons(str(ifc_building_element_type.id())),
                 )
 
             name = root.createElement("Name")
@@ -680,18 +665,18 @@ def create_gbxml(ifc_file):
             if not ifc_parent_boundary:
                 continue
 
-            ifc_building_element = get_element_or_type(ifc_building_element)
+            ifc_building_element_type = get_element_or_type(ifc_building_element)
 
             opening = root.createElement("Opening")
             dict_id[fix_xml_id(ifc_rel_space_boundary.GlobalId)] = opening
 
             opening.setAttribute(
                 "windowTypeIdRef",
-                fix_xml_id(ifc_building_element.GlobalId),
+                fix_xml_id(ifc_building_element_type.GlobalId),
             )
-            if ifc_building_element.is_a() in ["IfcWindow", "IfcWindowType"]:
+            if ifc_building_element.is_a("IfcWindow"):
                 opening.setAttribute("openingType", "OperableWindow")
-            elif ifc_building_element.is_a() in ["IfcDoor", "IfcDoorType"]:
+            elif ifc_building_element.is_a("IfcDoor"):
                 opening.setAttribute("openingType", "NonSlidingDoor")
 
             opening.setAttribute("id", "Opening%d" % opening_id)
@@ -708,7 +693,7 @@ def create_gbxml(ifc_file):
             name = root.createElement("Name")
             name.appendChild(
                 root.createTextNode(
-                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                    fix_xml_name(ifc_building_element_type.Name or "Unnamed")
                 )
             )
             opening.appendChild(name)
@@ -716,7 +701,7 @@ def create_gbxml(ifc_file):
             cad_object_id = root.createElement("CADObjectId")
             cad_object_id.appendChild(
                 root.createTextNode(
-                    fix_xml_name(ifc_building_element.Name or "Unnamed")
+                    fix_xml_name(ifc_building_element_type.Name or "Unnamed")
                 )
             )
             opening.appendChild(cad_object_id)
