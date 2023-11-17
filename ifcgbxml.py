@@ -390,6 +390,7 @@ def create_gbxml(ifc_file):
                         fix_xml_stry(ifc_space.Decomposes[0].RelatingObject.GlobalId),
                     )
 
+                    # FIXME create get_area()
                     pset_area = (
                         get_pset(
                             # IFC4
@@ -424,6 +425,7 @@ def create_gbxml(ifc_file):
                         )
                         space.appendChild(area)
 
+                    # FIXME create get_volume()
                     pset_volume = (
                         get_pset(
                             # IFC4
@@ -755,7 +757,7 @@ def create_gbxml(ifc_file):
             solar_heat_gain_coeff.setAttribute("unit", "Fraction")
             solar_heat_gain_coeff.appendChild(root.createTextNode("1.0"))
 
-            # FIXME set default, IFC4?
+            # FIXME create get_solar_heat_gain_coeff()
             pset_solar_heat = get_pset(
                 # IFC2X3
                 ifc_building_element,
@@ -772,6 +774,7 @@ def create_gbxml(ifc_file):
             transmittance.setAttribute("surfaceType", "Both")
             transmittance.appendChild(root.createTextNode("1.0"))
 
+            # FIXME create get_transmittance()
             pset_transmittance = (
                 get_pset(
                     # IFC4
@@ -842,8 +845,8 @@ def create_gbxml(ifc_file):
                     u_value.appendChild(root.createTextNode(str(pset_u_value)))
                     construction.appendChild(u_value)
 
+                # FIXME create get_absorptance()
                 pset_absorptance = get_pset(
-                    # IFC2X3, FIXME IFC4 equivalent?
                     ifc_building_element,
                     "Analytical Properties(Type)",
                     prop="Absorptance",
@@ -914,6 +917,7 @@ def create_gbxml(ifc_file):
                         )
                         material.appendChild(thickness)
 
+                        # FIXME create get_r_value()
                         pset_r_value = get_pset(
                             # IFC4
                             ifc_material,
@@ -925,6 +929,7 @@ def create_gbxml(ifc_file):
                             "Analytical Properties(Type)",
                             prop="Thermal Resistance (R)",
                         )
+                        # FIXME use get_u_value()
                         pset_u_value = get_pset(
                             # IFC2X3
                             ifc_material,
