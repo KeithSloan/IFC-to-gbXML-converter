@@ -1,7 +1,9 @@
 #!/usr/bin/python3
 
 import ifcopenshell.util.placement
+import ifcopenshell.util.shape
 import ifcopenshell.util.unit
+import ifcopenshell.geom
 import numpy as np
 import datetime
 import time
@@ -48,6 +50,16 @@ def get_boundary_vertices(ifc_rel_space_boundary):
         else:
             return []
         ifc_plane = ifc_curve.BasisSurface
+    else:
+        settings = ifcopenshell.geom.settings()
+        shape = ifcopenshell.geom.create_shape(settings, ifc_curve)
+        vertices = ifcopenshell.util.shape.get_vertices(shape)
+        verts = [[v[0], v[1], v[2], 1.0] for v in vertices]
+        matrix = ifcopenshell.util.placement.get_local_placement(
+            ifc_rel_space_boundary.RelatingSpace.Decomposes[0].RelatingObject.ObjectPlacement
+        )
+        return [(matrix @ v)[0:3] for v in verts]
+
     space_matrix = ifcopenshell.util.placement.get_local_placement(
         ifc_rel_space_boundary.RelatingSpace.ObjectPlacement
     )
@@ -264,6 +276,7 @@ def create_gbxml(ifc_file):
 
     for ifc_site in ifc_file.by_type("IfcSite"):
         if ifc_site.RefLongitude == None:
+            print("WARNING: missing RefLongitude")
             ifc_site.RefLatitude = [53, 23, 0]
             ifc_site.RefLongitude = [1, 28, 0]
             ifc_site.RefElevation = 75.0
@@ -308,11 +321,13 @@ def create_gbxml(ifc_file):
             )
             location.appendChild(name)
         else:
+            print("WARNING: missing SiteAddress")
             zipcode.appendChild(root.createTextNode("S1 2GH"))
 
         # Specify the 'Building' element of the gbXML schema; making use of IFC entity 'IfcBuilding'
         # This new element is added as child to the earlier created 'Campus' element
         if not ifc_site.IsDecomposedBy:
+            print("WARNING: IfcSite empty")
             continue
 
         for ifc_building in ifc_site.IsDecomposedBy[0].RelatedObjects:
@@ -340,6 +355,7 @@ def create_gbxml(ifc_file):
             # Specify the 'BuildingStorey' element of the gbXML schema; making use of IFC entity 'IfcBuildingStorey'
             # This new element is added as child to the earlier created 'Building' element
             if not ifc_building.IsDecomposedBy:
+                print("WARNING: IfcBuilding is empty")
                 continue
 
             for ifc_building_storey in ifc_building.IsDecomposedBy[0].RelatedObjects:
@@ -374,6 +390,7 @@ def create_gbxml(ifc_file):
                 # Specify the 'Space' element of the gbXML schema; making use of IFC entity 'IfcSpace'
                 # This new element is added as child to the earlier created 'Building' element
                 if not ifc_building_storey.IsDecomposedBy:
+                    print("WARNING: IfcBuildingStorey is empty")
                     continue
 
                 for ifc_space in ifc_building_storey.IsDecomposedBy[0].RelatedObjects:
@@ -424,6 +441,8 @@ def create_gbxml(ifc_file):
                             root.createTextNode(str(pset_area * area_unit_scale))
                         )
                         space.appendChild(area)
+                    else:
+                        print("WARNING: IfcSpace has no Area")
 
                     # FIXME create get_volume()
                     pset_volume = (
@@ -453,10 +472,15 @@ def create_gbxml(ifc_file):
                             root.createTextNode(str(pset_volume * volume_unit_scale))
                         )
                         space.appendChild(volume)
+                    else:
+                        print("WARNING: IfcSpace has no Volume")
 
                     name = root.createElement("Name")
                     name.appendChild(root.createTextNode(ifc_space.Name or "Unnamed"))
                     space.appendChild(name)
+
+                    if not ifc_space.BoundedBy:
+                        print("WARNING: IfcSpace not Bounded")
 
                     # Specify the 'SpaceBoundary' element of the gbXML schema; making use of IFC entity 'IfcSpace'
                     # This new element is added as child to the earlier created 'Space' element
@@ -467,11 +491,13 @@ def create_gbxml(ifc_file):
 
                         # Make sure a 'SpaceBoundary' is representing an actual element
                         if ifc_rel_space_boundary.RelatedBuildingElement == None:
+                            print("WARNING: SpaceBoundary has no RelatedBuildingElement")
                             continue
                         if (
                             ifc_rel_space_boundary.ConnectionGeometry.SurfaceOnRelatingElement
                             == None
                         ):
+                            print("WARNING: SpaceBoundary has no geometry")
                             continue
                         # require 2nd Level boundaries
                         if not (
@@ -480,9 +506,12 @@ def create_gbxml(ifc_file):
                                 "IfcRelSpaceBoundary2ndLevel"
                             )
                         ):
+                            print("WARNING: SpaceBoundary not 2ndLevel")
                             continue
 
                         vertices = get_boundary_vertices(ifc_rel_space_boundary)
+                        if not len(vertices):
+                            continue
 
                         ifc_building_element = (
                             ifc_rel_space_boundary.RelatedBuildingElement
@@ -509,6 +538,8 @@ def create_gbxml(ifc_file):
                                     root, vertices, linear_unit_scale=linear_unit_scale
                                 )
                             )
+                        else:
+                            print("WARNING: Element is not a Boundary Element")
 
     # Specify the 'Surface' element of the gbXML schema; making use of IFC entity 'IfcRelSpaceBoundary'
     # This new element is added as child to the earlier created 'Campus' element
@@ -533,6 +564,8 @@ def create_gbxml(ifc_file):
             continue
 
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
+        if not len(vertices):
+            continue
 
         # Specify each 'Surface' element and set 'SurfaceType' attributes
         if is_a_boundary_element(ifc_building_element):
@@ -591,6 +624,7 @@ def create_gbxml(ifc_file):
                 surface.setAttribute("surfaceType", "Air")
 
             else:
+                print("WARNING: setting surfaceType to Undefined")
                 surface.setAttribute("surfaceType", "Undefined")
                 if is_external(ifc_building_element):
                     surface.setAttribute("exposedToSun", "true")
@@ -652,6 +686,8 @@ def create_gbxml(ifc_file):
             continue
 
         vertices = get_boundary_vertices(ifc_rel_space_boundary)
+        if not len(vertices):
+            continue
 
         if ifc_building_element.is_a() in [
             "IfcWindow",
@@ -661,6 +697,7 @@ def create_gbxml(ifc_file):
             ifc_parent_boundary = get_parent_boundary(ifc_rel_space_boundary)
 
             if not ifc_parent_boundary:
+                print("WARNING: IfcWindow/IfcDoor boundary has no parent boundary")
                 continue
 
             ifc_building_element_type = get_element_or_type(ifc_building_element)
@@ -752,6 +789,8 @@ def create_gbxml(ifc_file):
                     pset_u_value *= 5.678
                 u_value.firstChild.data = str(pset_u_value)
                 window_type.appendChild(u_value)
+            else:
+                print("WARNING: IfcWindow/IfcDoor has no U-value")
 
             solar_heat_gain_coeff = root.createElement("SolarHeatGainCoeff")
             solar_heat_gain_coeff.setAttribute("unit", "Fraction")
@@ -767,6 +806,8 @@ def create_gbxml(ifc_file):
             if pset_solar_heat:
                 solar_heat_gain_coeff.firstChild.data = str(pset_solar_heat)
                 window_type.appendChild(solar_heat_gain_coeff)
+            else:
+                print("WARNING: IfcWindow/IfcDoor has no solar heat gain coefficient")
 
             transmittance = root.createElement("Transmittance")
             transmittance.setAttribute("unit", "Fraction")
@@ -798,6 +839,8 @@ def create_gbxml(ifc_file):
             if pset_transmittance:
                 transmittance.firstChild.data = str(pset_transmittance)
                 window_type.appendChild(transmittance)
+            else:
+                print("WARNING: IfcWindow/IfcDoor has no Transmittance")
 
             gbxml.appendChild(window_type)
 
@@ -857,6 +900,8 @@ def create_gbxml(ifc_file):
                     absorptance.setAttribute("type", "ExtIR")
                     absorptance.appendChild(root.createTextNode(str(pset_absorptance)))
                     construction.appendChild(absorptance)
+                else:
+                    print("WARNING: Building Element has no Absorptance")
 
                 name = root.createElement("Name")
                 name.appendChild(root.createTextNode(construction_name))
@@ -950,6 +995,8 @@ def create_gbxml(ifc_file):
                                 root.createTextNode(str(layer_thickness / pset_u_value))
                             )
                             material.appendChild(r_value)
+                        else:
+                            print("WARNING: IfcMaterial has no R-value")
 
                         gbxml.appendChild(material)
 
