@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ifcgbxml"
+version = "1.0.0"
+authors = [
+    {name = "Maarten Visschers", email = "maartenvisschers@hotmail.com"},
+    {name = "Bruno Postle", email = "bruno@postle.net"},
+    {name = "Tokarzewski", email = "bartlomiej.tokarzewski@gmail.com"},
+]
+description = "Convert IFC (Industry Foundation Classes) files to gbXML format for building energy analysis"
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: OS Independent",
+]
+keywords = ["ifc", "gbxml", "building", "energy", "analysis", "bim"]
+dependencies = [
+    "ifcopenshell>=0.8.2",
+    "numpy",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/brunopostle/IFC-to-gbXML-converter"
+"Bug Reports" = "https://github.com/brunopostle/IFC-to-gbXML-converter/issues"
+"Source" = "https://github.com/brunopostle/IFC-to-gbXML-converter"
+
+[project.scripts]
+ifcgbxml = "ifcgbxml:main"
+
+[tool.setuptools]
+py-modules = ["ifcgbxml"]

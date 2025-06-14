@@ -1271,7 +1271,8 @@ def create_gbxml(ifc_file):
     return builder.build()
 
 
-if __name__ == "__main__":
+def main():
+    """Entry point for console script."""
     if not len(sys.argv) == 3:
         print("Usage: " + sys.argv[0] + " input.ifc output.xml")
     else:
@@ -1282,3 +1283,7 @@ if __name__ == "__main__":
         # Create a new XML file and write all created elements to it
         root = create_gbxml(ifc_file)
         root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,8 +1,18 @@
-# Overview
+# ifcgbxml - IFC to gbXML Converter
+
 This IFC to gbXML converter is a result of research performed during my graduation project at the Eindhoven University of Technology. The converter aims to create an improved interoperability between BIM and whole-building energy analysis by translating the open exchange format IFC to a validated gbXML file format. Relationships between gbXML elements and corresponding IFC entities are created and linkages are established by iterating over multiple IFC entities.
 
 * Author: Maarten Visschers
 * Refactoring and IFC4 support: Bruno Postle
+
+## Installation
+
+Install from source:
+```bash
+git clone https://github.com/brunopostle/IFC-to-gbXML-converter.git
+cd IFC-to-gbXML-converter
+pip install .
+```
 
 ## Using the converter
 The current version of the converter is Python based without a GUI, with the script you are able to run the IFC-to-gbXML conversion. Supported are:
@@ -10,7 +20,7 @@ The current version of the converter is Python based without a GUI, with the scr
 * The gbXML 6.01 schema (http://www.gbxml.org/Schema_Current_GreenBuildingXML_gbXML).
 
 ### Command-line usage:
-    ifcgbxml.py input.ifc output.xml
+    ifcgbxml input.ifc output.xml
 
 ### Python usage:
     import ifcopenshell
@@ -18,6 +28,12 @@ The current version of the converter is Python based without a GUI, with the scr
     ifc_file = ifcopenshell.open("/path/input.ifc")
     root = create_gbxml(ifc_file)
     root.writexml(open("/path/output.xml", "w"), indent="  ", addindent="  ", newl="\n")
+
+## Requirements
+
+- Python 3.11 or newer
+- ifcopenshell >= 0.8.2
+- numpy
 
 ## What to do
 The converter expects that the IFC file has sufficient data, ie:
@@ -45,4 +61,4 @@ The converter expects that the IFC file has sufficient data, ie:
 * gbXML output is in SI units, project units are converted to SI units.
 
 ## More information
-For more information, please contact maartenvisschers@hotmail.com, or file an issue in the repository.
+For more information, please file an issue in the repository.
