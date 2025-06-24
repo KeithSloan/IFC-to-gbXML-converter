@@ -1271,6 +1271,12 @@ def create_gbxml(ifc_file):
     return builder.build()
 
 
+def convertIfc2gbXML(path_ifc, path_xml):
+    # Create a new XML file and write all created elements to it
+    root = create_gbxml(ifc_file)
+    root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
+
+
 def main():
     """Entry point for console script."""
     if not len(sys.argv) == 3:
@@ -1279,10 +1285,7 @@ def main():
         path_ifc = sys.argv[1]
         path_xml = sys.argv[2]
         ifc_file = ifcopenshell.open(path_ifc)
-
-        # Create a new XML file and write all created elements to it
-        root = create_gbxml(ifc_file)
-        root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
+	convertIfc2gbXML(path_ifc, path_xml)
 
 
 if __name__ == "__main__":
