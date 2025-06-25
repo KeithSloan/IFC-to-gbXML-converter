@@ -1273,6 +1273,7 @@ def create_gbxml(ifc_file):
 
 def convertIfc2gbXML(path_ifc, path_xml):
     # Create a new XML file and write all created elements to it
+    ifc_file = ifcopenshell.open(path_ifc)
     root = create_gbxml(ifc_file)
     root.writexml(open(path_xml, "w"), indent="  ", addindent="  ", newl="\n")
 
@@ -1284,8 +1285,7 @@ def main():
     else:
         path_ifc = sys.argv[1]
         path_xml = sys.argv[2]
-        ifc_file = ifcopenshell.open(path_ifc)
-	convertIfc2gbXML(path_ifc, path_xml)
+        convertIfc2gbXML(path_ifc, path_xml)
 
 
 if __name__ == "__main__":
